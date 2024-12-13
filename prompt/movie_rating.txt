@@ -1,0 +1,10 @@
+A user has watched these movies: [ViewHistory], with corresponding ratings: [RatingHistory]. Considering these preferences, which movie from the following options would they most likely watch next and rate close to a 5? Select one: [CansHere]. Answer:
+Based on this user’s viewing history: [ViewHistory] and their ratings: [RatingHistory], which movie from [CansHere] are they most likely to watch next and give a high rating (near 5)? Answer:
+Here is the user’s viewing history: [ViewHistory] and ratings: [RatingHistory]. Which movie from [CansHere] will they most likely choose next and rate close to a 5? Answer:
+Given the user’s past watched movies: [ViewHistory] and their ratings: [RatingHistory], select one option from [CansHere] that they would most likely watch next and rate near 5. Answer:
+Considering the viewer’s history: [ViewHistory] and ratings: [RatingHistory], choose which movie from [CansHere] they would most likely watch next and rate close to a 5. Answer:
+Given the user’s viewing history: [ViewHistory], their ratings: [RatingHistory], and the following candidate options: [CansHere], which movie would they most likely watch next and rate close to a 5? Answer:
+Look at the user’s previous movie selections: [ViewHistory] and their ratings: [RatingHistory]. Which single movie from [CansHere] are they most likely to watch next and rate near 5? Answer:
+The user’s viewing history is [ViewHistory], with corresponding ratings [RatingHistory]. Based on these, which option from [CansHere] would they likely choose next and rate close to a 5? Answer:
+Given the user’s watched list [ViewHistory] and their ratings [RatingHistory], which movie from the provided options [CansHere] would they most likely enjoy next and rate near 5? Answer:
+Considering the user’s past preferences indicated by [ViewHistory] and [RatingHistory], which title from [CansHere] would they most likely pick next and rate close to 5? Answer:
