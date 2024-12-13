@@ -156,6 +156,8 @@ cython_debug/
 
 *.DS_Store
 .idea/
+.AppleDouble
+.LSOverride
 
 
 # PyCharm
