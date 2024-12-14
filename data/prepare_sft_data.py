@@ -7,11 +7,11 @@ from tqdm import tqdm
 
 
 if __name__ == "__main__":
-    splits = ["train", "val", "test"]
-    # splits = ['train']
+    # splits = ["train", "val", "test"]
+    splits = ['train']
     cans_num = 20
     data_dir = "/home/ericwen/seq_rec_data/movielens-1m"
-    max_size=10000
+    max_size = 50000
     for split in splits:
         data_split = MovielensData_rating(data_dir=data_dir, stage=split, cans_num=cans_num, max_size=max_size)
         dic_lis = []

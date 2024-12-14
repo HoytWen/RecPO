@@ -21,11 +21,11 @@ def train(
         output_dir="output/",
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
-        prompt_path="./prompt/movie_rating.txt",
+        prompt_path="./prompt/movie_rating2.txt",
         dataset="",
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
         # wandb config
-        wandb_project: str = "Rec-PO",
+        wandb_project: str = "RecPO",
         wandb_name: str = "SFT",  # the name of the wandb run
         # training hyperparameters
         gradient_accumulation_steps: int = 8,
@@ -59,7 +59,7 @@ def train(
 
     data_files = {
         "train": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-size10000-cans20-val.json",
+        "validation": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-cans20-val.json",
     }
 
     data = load_dataset("json", data_files=data_files)
@@ -94,11 +94,11 @@ def train(
     else:
         tokenizer = LlamaTokenizer.from_pretrained(model_name)
 
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    # tokenizer.pad_token = tokenizer.eos_token
+    # tokenizer.padding_side = "right"
 
-    # tokenizer.pad_token_id = (0)
-    # tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
+    tokenizer.pad_token_id = (0)
+    tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
 
     # Change the LORA hyperparameters accordingly to fit your use case
     peft_config = LoraConfig(
@@ -165,7 +165,7 @@ def train(
 
     trainer.train()
 
-    output_dir = os.path.join(output_dir, "final_checkpoint")
+    output_dir = os.path.join(output_dir, "sft_checkpoint")
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 

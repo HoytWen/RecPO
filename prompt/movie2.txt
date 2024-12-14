@@ -1,0 +1,15 @@
+This person has watched the following movies: [HistoryHere]. Based on these past choices, which single movie from [CansHere] will they most likely watch next and rate close to a 5? Answer:
+This person’s viewing history is: [HistoryHere]. From the given options [CansHere], which movie are they most likely to pick next and rate near 5? Answer:
+The person previously watched these movies: [HistoryHere]. Considering these choices, which movie from [CansHere] will they likely select next and rate close to a 5? Answer:
+Given the person’s past viewed movies: [HistoryHere], which title from [CansHere] will they probably watch next and rate near 5? Answer:
+After watching [HistoryHere], which movie from [CansHere] would the person most likely enjoy next and rate close to 5? Answer:
+Based on the previously viewed [HistoryHere], which single movie from [CansHere] would the person most likely watch next and give a rating close to 5? Answer:
+Having watched [HistoryHere], which movie from [CansHere] would the person most likely select next and rate near 5? Answer:
+From the person’s history of watching [HistoryHere], which option from [CansHere] are they likely to pick next and rate close to 5? Answer:
+Considering the titles [HistoryHere] that the person has already seen, which movie from [CansHere] would they most likely choose next and rate near 5? Answer:
+The person’s previous choices are [HistoryHere]. From the available options [CansHere], which movie would they likely watch next and rate close to 5? Answer:
+Looking at the previously watched movies [HistoryHere], which of the following [CansHere] would the person most likely watch next and give a rating near 5? Answer:
+Based on the person’s past movie selections [HistoryHere], which movie from [CansHere] would they be most inclined to watch next and rate close to 5? Answer:
+After viewing [HistoryHere], which movie from [CansHere] is the person most likely to pick next and rate near 5? Answer:
+Given the previously watched [HistoryHere], which single movie from the provided options [CansHere] will the person likely watch next and rate close to 5? Answer:
+With a viewing history of [HistoryHere], which movie from [CansHere] is the person most likely to watch next and enjoy enough to rate near 5? Answer:

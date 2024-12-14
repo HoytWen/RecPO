@@ -39,7 +39,7 @@ class Prompt:
 
         # prompt = prompt.replace("[ViewHistory]", history)
         # prompt = prompt.replace("[RatingHistory]", history_ratings)
-        prompt = prompt.replace("[ViewHistoryAndRatings]", history)
+        prompt = prompt.replace("[HistoryAndRatings]", history)
         prompt = prompt.replace("[CansHere]", cans)
         prompt += " "
 
