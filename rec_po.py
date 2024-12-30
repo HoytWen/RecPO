@@ -30,6 +30,7 @@ def train(
         dataset="",
         resume_from_checkpoint: str = "output/sft_checkpoint/",  # either training checkpoint or final adapter
         # wandb config
+        report_to: str = "none",
         wandb_project: str = "RecPO",
         wandb_name: str = "CPO",  # the name of the wandb run
         # training hyperparameters.
@@ -39,7 +40,7 @@ def train(
         cpo_alpha: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo"] = "sigmoid",
         ln: bool = True,
-        neg_num: int = 1,
+        neg_num: int = 3,
         batch_size: int = 4,
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
@@ -212,8 +213,7 @@ def train(
         output_dir=output_dir,
         logging_dir=logging_dir,
         run_name=wandb_name,
-        report_to="wandb",
-        # report_to="none",
+        report_to=report_to,
         optim="paged_adamw_32bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,

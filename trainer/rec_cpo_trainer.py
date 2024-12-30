@@ -306,7 +306,7 @@ class RecCPOTrainer(Trainer):
 
         logits_dict = {}
         for key in policy_rejected_logps:
-            logits_dict[key] = (policy_rejected_logps[key] -policy_chosen_logps).to(self.accelerator.device)
+            logits_dict[key] = (policy_rejected_logps[key] - policy_chosen_logps).to(self.accelerator.device)
 
         if self.use_score:
             if chosen_score is not None and rejected_score is not None:
@@ -323,7 +323,7 @@ class RecCPOTrainer(Trainer):
                         margin = torch.log(1 + margin)
                         logits_dict[key] = logits_dict[key] + self.margin_lambda * margin
             else:
-                raise ValueError("The score value is not assinged")
+                raise ValueError("The score value is not assigned")
 
         if self.loss_type == "simpo":
             gamma_beta_ratio = self.simpo_gamma / self.beta
@@ -337,6 +337,7 @@ class RecCPOTrainer(Trainer):
         elif self.loss_type == "sigmoid":
             # This reduces to Equation 3 from the CPO paper when label_smoothing -> 0.
             logits = sum(torch.exp(self.beta * logits_dict[key]) for key in logits_dict)
+            # assert logits.shape == policy_chosen_logps.shape
             logits = -torch.log(logits)
             losses = (
                 -F.logsigmoid(logits) * (1 - self.label_smoothing)
@@ -355,7 +356,6 @@ class RecCPOTrainer(Trainer):
             raise ValueError(
                 f"Unknown loss type: {self.loss_type}. Should be one of ['sigmoid', 'hinge', 'ipo', 'simpo']"
             )
-
 
         chosen_rewards = self.beta * (policy_chosen_logps.to(self.accelerator.device)).detach()
         rejected_rewards = {}
