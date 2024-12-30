@@ -39,7 +39,7 @@ def train(
         cpo_alpha: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo"] = "sigmoid",
         ln: bool = True,
-        neg_num: int = 3,
+        neg_num: int = 1,
         batch_size: int = 4,
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,

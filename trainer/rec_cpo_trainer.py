@@ -286,7 +286,7 @@ class RecCPOTrainer(Trainer):
             policy_chosen_logps: torch.FloatTensor,
             policy_rejected_logps: Dict[str, torch.FloatTensor],
             chosen_score:  Optional[List[torch.FloatTensor]] = None,
-            rejected_score: Optional[ Dict[str, List[torch.FloatTensor]]] = None,
+            rejected_score: Optional[Dict[str, List[torch.FloatTensor]]] = None,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         """Compute the DPO loss for a batch of policy and reference model log probabilities.
 
