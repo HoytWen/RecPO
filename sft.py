@@ -165,7 +165,7 @@ def train(
 
     trainer.train()
 
-    output_dir = os.path.join(output_dir, "sft_checkpoint")
+    output_dir = os.path.join(output_dir, wandb_name)
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 

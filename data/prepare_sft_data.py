@@ -7,13 +7,15 @@ from tqdm import tqdm
 
 
 if __name__ == "__main__":
-    # splits = ["train", "val", "test"]
-    splits = ['train']
+    splits = ["val", "test"]
+    # splits = ['train']
     cans_num = 20
     data_dir = "/home/ericwen/seq_rec_data/movielens-1m"
     max_size = 50000
+    rating_threshold = 1
     for split in splits:
-        data_split = MovielensData_rating(data_dir=data_dir, stage=split, cans_num=cans_num, max_size=max_size)
+        data_split = MovielensData_rating(data_dir=data_dir, stage=split, cans_num=cans_num, max_size=max_size,
+                                          rating_threshold=1)
         dic_lis = []
         for i in tqdm(range(len(data_split))):
         ### Add random Shuffle
@@ -37,6 +39,11 @@ if __name__ == "__main__":
                     'selectionScore': data_split[i]["next_rating"],
                 }
             dic_lis.append(dic)
-        with open(f"movielens-1m/movielens-size{max_size}-cans{cans_num}-{split}.json", "w") as f:
-            json.dump(dic_lis, f, indent=4)
+
+        if split in ['train']:
+            with open(f"movielens-1m/movielens-size{max_size}-cans{cans_num}-{split}.json", "w") as f:
+                json.dump(dic_lis, f, indent=4)
+        else:
+            with open(f"movielens-1m/movielens-cans{cans_num}-{split}-rthreshold{int(rating_threshold)}.json", "w") as f:
+                json.dump(dic_lis, f, indent=4)
 
