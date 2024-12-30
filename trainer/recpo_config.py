@@ -54,7 +54,6 @@ class RecPOConfig(TrainingArguments):
 
     beta: float = 1.0
     simpo_gamma: float = 0.5
-    margin_lambda: float = 0.5
     sft_weight: float = 0.0
     label_smoothing: float = 0
     loss_type: Literal["sigmoid", "simpo", "hinge", "ipo"] = "sigmoid"
@@ -73,7 +72,8 @@ class RecPOConfig(TrainingArguments):
     attn_implementation: str = None
 
     use_score: bool = True
+    margin_lambda: float = 0.5
     ratio: bool = False
     # trainer_type: str = "simpo"
     ln: bool = True
-    alpha: float = 0.0
+    cpo_alpha: float = 0.0

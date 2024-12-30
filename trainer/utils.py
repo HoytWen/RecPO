@@ -167,8 +167,8 @@ class RecPODataCollatorWithPadding:
                 if "prompt" in k:
                     padded_batch[k] = padded_batch[k].flip(dims=[1])
             elif k.endswith("score"):
-                temp = [ex[k] for ex in batch]
-                padded_batch[k] = torch.FloatTensor(temp)
+                padded_batch[k] = [torch.FloatTensor([ex[k]]) for ex in batch]
+                # padded_batch[k] = torch.FloatTensor(temp)
             else:
                 padded_batch[k] = [ex[k] for ex in batch]
 
