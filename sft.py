@@ -18,11 +18,11 @@ import fire
 
 def train(
         # path
-        output_dir="output/",
-        logging_dir="log/",
-        model_name="meta-llama/Llama-3.2-1B-Instruct",
+        output_dir: str = "output/",
+        logging_dir: str = "log/",
+        model_name: str = "meta-llama/Llama-3.2-1B-Instruct",
         prompt_path="./prompt/movie_rating2.txt",
-        dataset="",
+        dataset: str = "",
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
         # wandb config
         wandb_project: str = "RecPO",
@@ -34,6 +34,7 @@ def train(
         learning_rate: float = 1e-5,
         cutoff_len: int = 512,
         eval_step=0.2,
+        report_to: str = "none",
 
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
@@ -58,8 +59,8 @@ def train(
         return dic
 
     data_files = {
-        "train": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-cans20-val.json",
+        "train": "./data/movielens-1m/movielens-size10000-cans20-train.json",
+        "validation": "./data/movielens-1m/movielens-cans20-val.json",
     }
 
     data = load_dataset("json", data_files=data_files)
@@ -93,9 +94,6 @@ def train(
         tokenizer = AutoTokenizer.from_pretrained(model_name)
     else:
         tokenizer = LlamaTokenizer.from_pretrained(model_name)
-
-    # tokenizer.pad_token = tokenizer.eos_token
-    # tokenizer.padding_side = "right"
 
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
@@ -134,7 +132,6 @@ def train(
         bf16=True,
         save_strategy="steps",
         save_steps=eval_step,
-        save_total_limit=100,
         load_best_model_at_end=True,
         evaluation_strategy="steps",
         eval_steps=eval_step,
@@ -143,7 +140,7 @@ def train(
         optim="paged_adamw_32bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,
-        report_to="wandb",
+        report_to=report_to,
         run_name=wandb_name,
         logging_dir=logging_dir,
         gradient_checkpointing_kwargs={'use_reentrant': True},
@@ -158,7 +155,6 @@ def train(
         eval_dataset=val_data,
         data_collator=collator,
         tokenizer=tokenizer,
-        # max_seq_length=cutoff_len,
         formatting_func=formatting_prompts_func,
         args=training_args
     )

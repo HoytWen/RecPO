@@ -18,6 +18,8 @@ from transformers import (DataCollator,
                           is_wandb_available)
 from transformers.trainer_callback import TrainerCallback
 from transformers.utils import is_peft_available
+from accelerate import PartialState
+from trl.trainer.utils import DPODataCollatorWithPadding
 
 from .utils import RecPODataCollatorWithPadding, pad_to_length
 from .recpo_config import RecPOConfig
@@ -173,15 +175,22 @@ class RecCPOTrainer(Trainer):
             else:
                 max_completion_length = args.max_completion_length
 
-            data_collator = RecPODataCollatorWithPadding(
-                tokenizer,
-                max_length=max_length,
-                max_prompt_length=max_prompt_length,
-                label_pad_token_id=args.label_pad_token_id,
-                padding_value=args.padding_value,
-                truncation_mode=args.truncation_mode,
-                use_score=args.use_score,
-            )
+            # data_collator = RecPODataCollatorWithPadding(
+            #     tokenizer,
+            #     max_length=max_length,
+            #     max_prompt_length=max_prompt_length,
+            #     label_pad_token_id=args.label_pad_token_id,
+            #     padding_value=args.padding_value,
+            #     truncation_mode=args.truncation_mode,
+            #     use_score=args.use_score,
+            # )
+
+            if data_collator is None:
+                data_collator = RecPODataCollatorWithPadding(
+                    pad_token_id=tokenizer.pad_token_id,
+                    label_pad_token_id=args.label_pad_token_id,
+                    is_encoder_decoder=self.is_encoder_decoder,
+                )
 
             if args.remove_unused_columns:
                 args.remove_unused_columns = False
@@ -226,6 +235,12 @@ class RecCPOTrainer(Trainer):
 
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
 
+        with PartialState().local_main_process_first():
+            # tokenize the dataset
+            train_dataset = train_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
+            if eval_dataset is not None:
+                eval_dataset = eval_dataset.map(self.tokenize_row, num_proc=args.dataset_num_proc)
+
         super().__init__(
             model,
             args,
@@ -239,6 +254,115 @@ class RecCPOTrainer(Trainer):
             optimizers,
             preprocess_logits_for_metrics,
         )
+
+        if not hasattr(self, "accelerator"):
+            raise AttributeError(
+                "Your `Trainer` does not have an `accelerator` object. Consider upgrading `transformers`."
+            )
+
+    def tokenize_row(self, feature) -> Dict:
+
+        prompt = feature["prompt"]
+        chosen = feature["chosen"]
+        rejected = {}
+        for key in feature:
+            if key.startswith("rejected") and not key.endswith("score"):
+                rejected[key] = feature[key]
+
+        prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
+        chosen_tokens = self.tokenizer(chosen, add_special_tokens=False)
+        rejected_tokens = {}
+        for key in rejected:
+            rejected_tokens[key] = self.tokenizer(rejected[key], add_special_tokens=False)
+
+        assert self.tokenizer.bos_token_id not in prompt_tokens["input_ids"], f"Prompt contains BOS token: {prompt}"
+        assert self.tokenizer.eos_token_id not in prompt_tokens["input_ids"], f"Prompt contains EOS token: {prompt}"
+        assert (
+                self.tokenizer.eos_token_id not in chosen_tokens["input_ids"]
+        ), f"Chosen response contains EOS token: {chosen}"
+        assert (
+            all([self.tokenizer.eos_token_id not in rejected_tokens[key]["input_ids"] for key in rejected_tokens])
+        ), f"Rejected response contains EOS token: {rejected}"
+
+        prompt_tokens["input_ids"] = [self.tokenizer.bos_token_id] + prompt_tokens["input_ids"]
+        prompt_tokens["attention_mask"] = [1] + prompt_tokens["attention_mask"]
+        chosen_tokens["input_ids"].append(self.tokenizer.eos_token_id)
+        chosen_tokens["attention_mask"].append(1)
+        for key in rejected_tokens:
+            rejected_tokens[key]["input_ids"].append(self.tokenizer.eos_token_id)
+            rejected_tokens[key]["attention_mask"].append(1)
+
+        max_rejected_len = max([len(rejected_tokens[key]["input_ids"]) for key in rejected_tokens])
+        longer_response_length = max(len(chosen_tokens["input_ids"]), max_rejected_len)
+
+        # if combined sequence is too long, truncate the prompt
+        if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:
+            if self.truncation_mode == "keep_start":
+                prompt_tokens = {k: v[: self.max_prompt_length] for k, v in prompt_tokens.items()}
+            elif self.truncation_mode == "keep_end":
+                prompt_tokens = {k: v[-self.max_prompt_length:] for k, v in prompt_tokens.items()}
+            else:
+                raise ValueError(f"Unknown truncation mode: {self.truncation_mode}")
+
+        # if that's still too long, truncate the response
+        if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:
+            chosen_tokens = {k: v[: self.max_length - self.max_prompt_length] for k, v in chosen_tokens.items()}
+            rejected_tokens = {k: v[: self.max_length - self.max_prompt_length] for k, v in rejected_tokens.items()}
+
+        # Create labels
+        chosen_sequence_tokens = {k: prompt_tokens[k] + chosen_tokens[k] for k in chosen_tokens}
+        rejected_sequence_tokens = {}
+        # rejected_tokens: Dict[str, Dict]
+        for key in rejected_tokens:
+            rejected_sequence_tokens[key] = {k: prompt_tokens[k] + rejected_tokens[key][k] for k in
+                                             rejected_tokens[key]}
+        chosen_sequence_tokens["labels"] = chosen_sequence_tokens["input_ids"][:]
+        chosen_sequence_tokens["labels"][: len(prompt_tokens["input_ids"])] = [self.label_pad_token_id] * len(
+            prompt_tokens["input_ids"]
+        )
+        for key in rejected_sequence_tokens:
+            rejected_sequence_tokens[key]["labels"] = rejected_sequence_tokens[key]["input_ids"][:]
+            rejected_sequence_tokens[key]["labels"][: len(prompt_tokens["input_ids"])] = (
+                    [self.label_pad_token_id] * len(prompt_tokens["input_ids"]))
+
+        batch = {}
+
+        batch["prompt"] = prompt
+        batch["chosen"] = prompt + chosen
+        for key in rejected:
+            batch[key] = prompt + rejected[key]
+        batch["chosen_response_only"] = chosen
+        for key in rejected:
+            batch[f"{key}_response_only"] = rejected[key]
+
+        for k, toks in {
+            "chosen": chosen_sequence_tokens,
+            # "rejected": rejected_sequence_tokens,
+            "prompt": prompt_tokens,
+        }.items():
+            for type_key, tokens in toks.items():
+                if type_key == "token_type_ids":
+                    continue
+                batch[f"{k}_{type_key}"] = tokens
+        # rejected_sequence_tokens: Dict[str, Dict]
+        for k, toks in rejected_sequence_tokens.items():
+            for type_key, tokens in toks.items():
+                if type_key == "token_type_ids":
+                    continue
+                batch[f"{k}_{type_key}"] = tokens
+
+        if self.use_score:
+            chosen_score = feature["chosen_score"]
+            rejected_score = {}
+            for key in feature:
+                if key.startswith("rejected") and key.endswith("score"):
+                    rejected_score[key] = feature[key]
+
+            batch["chosen_score"] = chosen_score
+            for key in rejected_score:
+                batch[key] = rejected_score[key]
+
+        return batch
 
     @staticmethod
     def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]],
@@ -529,6 +653,7 @@ class RecCPOTrainer(Trainer):
         for key in policy_rejected_logits:
             metrics[f"{prefix}logits/rejected-{key}"] = policy_rejected_logits[key].detach().cpu().numpy().mean()
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().cpu().numpy().mean()
+        metrics[f"{prefix}nll_loss"] = policy_nll_loss.detach().mean().cpu()
 
         return loss, metrics
 

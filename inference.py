@@ -1,5 +1,5 @@
 from datasets import load_dataset
-from transformers import LlamaForCausalLM, LlamaTokenizer, BitsAndBytesConfig, AutoTokenizer
+from transformers import LlamaTokenizer, BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM
 from Prompt import *
 import torch
 from torch.utils.data import DataLoader
@@ -11,12 +11,11 @@ import fire
 
 
 def inference(dataset="",
+              model_name="meta-llama/Llama-3.2-1B-Instruct",
+              prompt_path="./prompt/movie_rating2.txt",
               batch_size: int = 0,
               resume_from_checkpoint: str = "",
-              base_model="",
-              external_prompt_path="",
               ):
-    base_model = base_model
     compute_dtype = getattr(torch, "bfloat16")
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -27,8 +26,9 @@ def inference(dataset="",
     )
     device_index = Accelerator().process_index
     device_map = {"": device_index}
-    model = LlamaForCausalLM.from_pretrained(
-        base_model,
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
         device_map=device_map,
         # quantization_config=bnb_config,
     )
@@ -37,10 +37,10 @@ def inference(dataset="",
         model = PeftModel.from_pretrained(model, resume_from_checkpoint)
     model.eval()
 
-    if "Llama-3" in base_model:
-        tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if "Llama-3" in model_name:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
     else:
-        tokenizer = LlamaTokenizer.from_pretrained(base_model)
+        tokenizer = LlamaTokenizer.from_pretrained(model_name)
 
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"
@@ -61,7 +61,6 @@ def inference(dataset="",
         dic["prompt"] = prompt[:-1]
         return dic
 
-    prompt_path = "prompt.txt" if external_prompt_path == "" else external_prompt_path
     data_files = {
         "test": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-cans20-test.json",
     }

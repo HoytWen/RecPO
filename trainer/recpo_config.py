@@ -67,7 +67,7 @@ class RecPOConfig(TrainingArguments):
 
     model_init_kwargs: Optional[Dict] = None
 
-    dataset_num_proc: Optional[int] = None
+    dataset_num_proc: Optional[int] = 8
 
     attn_implementation: str = None
 

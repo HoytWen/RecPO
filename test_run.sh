@@ -1,7 +1,9 @@
 #cd /home/ericwen/S-DPO
+#python sft.py --prompt_path ./prompt/movie2.txt  --report_to none
 #python sft.py --prompt_path ./prompt/movie2.txt  --wandb_name SFT-woRating-HighRate-Full
 
 cd /home/ericwen/Rec-PO
+#python sft.py --prompt_path ./prompt/movie2.txt  --report_to none
 #python sft.py --prompt_path ./prompt/movie_rating2.txt  --wandb_name SFT-wRating-HighRate
 
 ## CPO experiment

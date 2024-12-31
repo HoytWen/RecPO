@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import torch
 import re
 import random
@@ -8,7 +9,6 @@ from transformers import AutoTokenizer, TrainingArguments, AutoModelForCausalLM,
 from datasets import load_dataset
 from trl import DPOTrainer, DPOConfig, CPOTrainer, CPOConfig
 from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model, PeftModel, PeftConfig
-# from utils import find_all_linear_names, print_trainable_parameters
 
 import bitsandbytes as bnb
 from accelerate import Accelerator
@@ -17,10 +17,12 @@ import fire
 from Prompt import Prompt
 from trainer.rec_dpo_trainer import RecDPOTrainer
 from trainer.rec_cpo_trainer import RecCPOTrainer
-from trainer.utils import RecPODataCollatorWithPadding
 from trainer.recpo_config import RecPOConfig
 
+os.environ["TRANSFORMERS_CACHE"] = "/mnt/ssd3/chunhui/research"
+
 random.seed(1958)
+
 def train(
         # train
         output_dir="output/",
@@ -28,7 +30,7 @@ def train(
         model_name="meta-llama/Llama-3.2-1B-Instruct",
         prompt_path="./prompt/movie_rating2.txt",
         dataset="",
-        resume_from_checkpoint: str = "output/sft_checkpoint/",  # either training checkpoint or final adapter
+        resume_from_checkpoint: str = "output/SFT-multi-gpu/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
         wandb_project: str = "RecPO",
@@ -53,8 +55,8 @@ def train(
     os.environ['WANDB_PROJECT'] = wandb_project
 
     data_files = {
-        "train": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-cans20-val.json",
+        "train": "./data/movielens-1m/movielens-size10000-cans20-train.json",
+        "validation": "./data/movielens-1m/movielens-cans20-val.json",
     }
 
     def convert_dict_to_prompt(d: dict):
@@ -205,7 +207,6 @@ def train(
         truncation_mode="keep_end",
         save_strategy="steps",
         save_steps=eval_step,
-        save_total_limit=100,
         evaluation_strategy="steps",
         eval_steps=eval_step,
         load_best_model_at_end=True,
