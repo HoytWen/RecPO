@@ -3,24 +3,17 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import random
 
 import torch
-from typing import Any, Dict, Literal, Optional
-
+from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, LoraConfig, TaskType, PeftModel
 from transformers import AutoTokenizer, TrainingArguments, AutoModelForCausalLM, BitsAndBytesConfig
 from datasets import load_dataset
-from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model, PeftModel, PeftConfig
+from trl import DPOTrainer, DPOConfig
+from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
+
+from Prompt import Prompt
 
 import bitsandbytes as bnb
 from accelerate import Accelerator
 import fire
-
-from Prompt import Prompt
-from trainer.rec_dpo_trainer import RecDPOTrainer
-from trainer.rec_cpo_trainer import RecCPOTrainer
-from trainer.recpo_config import RecPOConfig
-
-os.environ["TRANSFORMERS_CACHE"] = "/mnt/ssd3/chunhui/research"
-
-random.seed(1958)
 
 def train(
         # train
@@ -31,17 +24,11 @@ def train(
         dataset="",
         resume_from_checkpoint: str = "output/SFT-multi-gpu/",  # either training checkpoint or final adapter
         # wandb config
-        report_to: str = "none",
-        wandb_project: str = "RecPO",
-        wandb_name: str = "CPO",  # the name of the wandb run
-        # training hyperparameters.
-        beta: float = 1.,
-        simpo_gamma: float = 0.5,
-        margin_lambda: float = 0.5,
-        cpo_alpha: float = 0.,
-        loss_type: Literal["sigmoid", "hinge", "simpo", "ipo"] = "sigmoid",
-        ln: bool = True,
-        neg_num: int = 3,
+        wandb_project: str = "RecPo",
+        wandb_name: str = "DPO",  # the name of the wandb run
+        # training hyperparameters
+        beta: float = 0.1,
+        neg_num: int = 1,
         batch_size: int = 4,
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
@@ -49,7 +36,7 @@ def train(
         prompt_cutoff_len: int = 480,
         cutoff_len: int = 512,
         eval_step=0.1,
-        use_score=True
+        report_to: str = "none"
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
 
@@ -68,11 +55,7 @@ def train(
         return t
 
     def process_data(examples):
-        dic = {"prompt": [], "chosen": [], "chosen_score": []}
-        for i in range(1, neg_num + 1):
-            dic[f"rejected{i}"] = []
-            dic[f"rejected{i}_score"] = []
-
+        dic = {"prompt":[], "chosen":[], "rejected":[]}
         columns = list(examples.keys())
         for i in range(len(examples[columns[0]])):
             data_point = {}
@@ -80,51 +63,29 @@ def train(
             data_point["itemList"] = examples["itemList"][i]
             data_point["historyList"] = examples["historyList"][i]
             data_point["historyRatingList"] = examples["historyRatingList"][i]
-            data_point["itemScoreList"] = examples["itemScoreList"][i]
-            data_point["selectionScore"] = examples["selectionScore"][i]
-
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
-
             chosen = data_point["trueSelection"]
-            chosen_score = data_point["selectionScore"]
+            negative_items = [item for item in data_point["itemList"] if item != data_point["trueSelection"]]
+            sample_negs = random.sample(negative_items, neg_num)
+            for rejected in sample_negs:
+                dic['prompt'].append(prompt)
+                dic['chosen'].append(chosen)
+                dic['rejected'].append(rejected)
 
-            selection_index = data_point["itemList"].index(data_point["trueSelection"])
-            negative_items = [data_point["itemList"][x] for x in range(len(data_point["itemList"])) if
-                              x != selection_index]
-            indices = random.sample(range(len(negative_items)), neg_num)
-            sample_negs = [negative_items[x] for x in indices]
-
-            if data_point["itemScoreList"]:
-                negative_scores = [data_point["itemScoreList"][x] for x in range(len(data_point["itemScoreList"])) if
-                                    x != selection_index]
-                sample_neg_scores = [negative_scores[x] for x in indices]
-            else:
-                sample_neg_scores = [0.] * neg_num
-
-
-            dic["prompt"].append(prompt)
-            dic["chosen"].append(chosen)
-            dic["chosen_score"].append(chosen_score)
-            for j in range(neg_num):
-                rejected = sample_negs[j]
-                rejected_score = sample_neg_scores[j]
-                dic[f"rejected{j+1}"].append(rejected)
-                dic[f"rejected{j+1}_score"].append(rejected_score)
         return dic
 
 
     data = load_dataset("json", data_files=data_files)
+
     columns = data["train"].column_names
     train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
     print(train_data)
 
     # random 2000 samples for validation
     val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
-
     if val_data.num_rows > 2000:
         val_data = val_data.select(range(2000))
-
     print(val_data)
 
     device_index = Accelerator().process_index
@@ -137,8 +98,8 @@ def train(
     )
 
     policy_model = AutoModelForCausalLM.from_pretrained(model_name,
-                                                      device_map=device_map,
-                                                      quantization_config=bnb_config)
+                                                  device_map=device_map,
+                                                  quantization_config=bnb_config)
     policy_model.config.use_cache = False
     policy_model = prepare_model_for_kbit_training(policy_model)
 
@@ -155,16 +116,19 @@ def train(
         policy_model = get_peft_model(policy_model, peft_config)
     policy_model.print_trainable_parameters()
 
+    reference_model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                 device_map=device_map,
+                                                 quantization_config=bnb_config)
+    if resume_from_checkpoint:
+        reference_model = PeftModel.from_pretrained(reference_model, resume_from_checkpoint)
+    reference_model.print_trainable_parameters()
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
 
-    training_args = RecPOConfig(
+    training_args = DPOConfig(
         beta=beta,
-        simpo_gamma=simpo_gamma,
-        margin_lambda=margin_lambda,
-        cpo_alpha=cpo_alpha,
-        ln=ln,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
@@ -172,17 +136,16 @@ def train(
         num_train_epochs=num_train_epochs,
         learning_rate=learning_rate,
         bf16=True,
-        loss_type=loss_type,
-        truncation_mode="keep_end",
         save_strategy="steps",
         save_steps=eval_step,
+        save_total_limit=100,
         evaluation_strategy="steps",
         eval_steps=eval_step,
         load_best_model_at_end=True,
         logging_steps=1,
         output_dir=output_dir,
-        run_name=wandb_name,
         report_to=report_to,
+        run_name=wandb_name,
         optim="paged_adamw_32bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,
@@ -191,23 +154,23 @@ def train(
         ddp_find_unused_parameters=False,
         max_prompt_length=prompt_cutoff_len,
         max_length=cutoff_len,
-        use_score=use_score,
     )
 
-    rec_po_trainer = RecCPOTrainer(
+    dpo_trainer = DPOTrainer(
         policy_model,
+        reference_model,
         args=training_args,
         train_dataset=train_data,
         eval_dataset=val_data,
         tokenizer=tokenizer,
     )
-    rec_po_trainer.train()
+
+    dpo_trainer.train()
 
     output_dir = os.path.join(output_dir, wandb_name)
-    rec_po_trainer.save_model(output_dir)
+    dpo_trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 
 
 if __name__ == "__main__":
     fire.Fire(train)
-

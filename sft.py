@@ -1,8 +1,8 @@
 import os
-import torch
-import re
-import wandb
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+import random
 
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
 from datasets import load_dataset
 from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
