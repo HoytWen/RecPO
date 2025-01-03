@@ -4,7 +4,7 @@ import transformers
 from typing import List
 from datasets import load_dataset
 import json
-from transformers import LlamaForCausalLM, LlamaTokenizer, GenerationConfig
+from transformers import LlamaForCausalLM, LlamaTokenizer, GenerationConfig, GenerationMixin
 from peft import PeftModel
 import torch.nn as nn
 from torch.utils.data import DataLoader

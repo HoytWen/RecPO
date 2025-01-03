@@ -19,7 +19,6 @@ from transformers import (DataCollator,
 from transformers.trainer_callback import TrainerCallback
 from transformers.utils import is_peft_available
 from accelerate import PartialState
-from trl.trainer.utils import DPODataCollatorWithPadding
 
 from .utils import RecPODataCollatorWithPadding, pad_to_length
 from .recpo_config import RecPOConfig
@@ -175,16 +174,6 @@ class RecCPOTrainer(Trainer):
             else:
                 max_completion_length = args.max_completion_length
 
-            # data_collator = RecPODataCollatorWithPadding(
-            #     tokenizer,
-            #     max_length=max_length,
-            #     max_prompt_length=max_prompt_length,
-            #     label_pad_token_id=args.label_pad_token_id,
-            #     padding_value=args.padding_value,
-            #     truncation_mode=args.truncation_mode,
-            #     use_score=args.use_score,
-            # )
-
             if data_collator is None:
                 data_collator = RecPODataCollatorWithPadding(
                     pad_token_id=tokenizer.pad_token_id,
@@ -201,9 +190,9 @@ class RecCPOTrainer(Trainer):
                     UserWarning,
                 )
 
-            self.use_dpo_data_collator = True
+            self.use_recpo_data_collator = True
         else:
-            self.use_dpo_data_collator = False
+            self.use_recpo_data_collator = False
 
 
         self.max_length = args.max_length
@@ -438,13 +427,14 @@ class RecCPOTrainer(Trainer):
                     if self.ratio:
                         margin = (torch.cat(chosen_score, dim=0) / torch.cat(rejected_score[f"{key}_score"],
                                                                                  dim=0)).to(
-                            self.accelerator.device) / self.beta
-                        logits_dict[key] + self.margin_lambda * margin
+                            self.accelerator.device)
+                        margin = margin / self.beta
+                        logits_dict[key] = logits_dict[key] + self.margin_lambda * margin
                     else:
                         margin = (torch.cat(chosen_score, dim=0) - torch.cat(rejected_score[f"{key}_score"],
                                                                                  dim=0)).to(
                             self.accelerator.device) / self.beta
-                        margin = torch.log(1 + margin)
+                        margin = torch.log(1 + margin) / self.beta
                         logits_dict[key] = logits_dict[key] + self.margin_lambda * margin
             else:
                 raise ValueError("The score value is not assigned")
@@ -664,7 +654,7 @@ class RecCPOTrainer(Trainer):
             return_outputs=False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
 
-        if not self.use_dpo_data_collator:
+        if not self.use_recpo_data_collator:
             warnings.warn(
                 "compute_loss is only implemented for DPODataCollatorWithPadding, and you passed a datacollator that is different than "
                 "DPODataCollatorWithPadding - you might see unexpected behavior. Alternatively, you can implement your own prediction_step method if you are using a custom data collator"
@@ -705,7 +695,7 @@ class RecCPOTrainer(Trainer):
             prediction_loss_only: bool,
             ignore_keys: Optional[List[str]] = None,
     ):
-        if not self.use_dpo_data_collator:
+        if not self.use_recpo_data_collator:
             warnings.warn(
                 "prediction_step is only implemented for DPODataCollatorWithPadding, and you passed a datacollator that is different than "
                 "DPODataCollatorWithPadding - you might see unexpected behavior. Alternatively, you can implement your own prediction_step method if you are using a custom data collator"

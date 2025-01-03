@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import random
 
 import torch
@@ -14,11 +13,10 @@ from accelerate import Accelerator
 import fire
 
 from Prompt import Prompt
-from trainer.rec_dpo_trainer import RecDPOTrainer
 from trainer.rec_cpo_trainer import RecCPOTrainer
 from trainer.recpo_config import RecPOConfig
 
-os.environ["TRANSFORMERS_CACHE"] = "/mnt/ssd3/chunhui/research"
+os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 
 random.seed(1958)
 
@@ -39,7 +37,7 @@ def train(
         simpo_gamma: float = 0.5,
         margin_lambda: float = 0.5,
         cpo_alpha: float = 0.,
-        loss_type: Literal["sigmoid", "hinge", "simpo", "ipo"] = "sigmoid",
+        loss_type: Literal["sigmoid", "hinge", "simpo", "ipo", "cpo"] = "sigmoid",
         ln: bool = True,
         neg_num: int = 3,
         batch_size: int = 4,
@@ -49,7 +47,7 @@ def train(
         prompt_cutoff_len: int = 480,
         cutoff_len: int = 512,
         eval_step=0.1,
-        use_score=True
+        use_score: bool = True,
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
 
@@ -154,6 +152,7 @@ def train(
         )
         policy_model = get_peft_model(policy_model, peft_config)
     policy_model.print_trainable_parameters()
+
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token_id = (0)

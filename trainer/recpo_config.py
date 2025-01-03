@@ -53,10 +53,10 @@ class RecPOConfig(TrainingArguments):
     max_target_length: Optional[int] = None
 
     beta: float = 1.0
-    simpo_gamma: float = 0.5
+    simpo_gamma: Optional[float] = None
     sft_weight: float = 0.0
     label_smoothing: float = 0
-    loss_type: Literal["sigmoid", "simpo", "hinge", "ipo"] = "sigmoid"
+    loss_type: Literal["sigmoid", "simpo", "hinge", "ipo", "cpo"] = "sigmoid"
     disable_dropout: bool = True
 
     label_pad_token_id: int = -100
@@ -66,14 +66,14 @@ class RecPOConfig(TrainingArguments):
     is_encoder_decoder: Optional[bool] = None
 
     model_init_kwargs: Optional[Dict] = None
+    ref_model_init_kwargs: Optional[Dict] = None
 
     dataset_num_proc: Optional[int] = None
 
     attn_implementation: str = None
 
     use_score: bool = True
-    margin_lambda: float = 0.5
+    margin_lambda: Optional[float] = None
     ratio: bool = False
-    # trainer_type: str = "simpo"
-    ln: bool = True
-    cpo_alpha: float = 0.0
+    ln: Optional[bool] = None
+    cpo_alpha: Optional[float] = None

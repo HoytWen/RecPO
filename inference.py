@@ -1,5 +1,7 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from datasets import load_dataset
-from transformers import LlamaTokenizer, BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM
+from transformers import LlamaTokenizer, LlamaForCausalLM, BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM
 from Prompt import *
 import torch
 from torch.utils.data import DataLoader
@@ -13,8 +15,8 @@ import fire
 def inference(dataset="",
               model_name="meta-llama/Llama-3.2-1B-Instruct",
               prompt_path="./prompt/movie_rating2.txt",
-              batch_size: int = 0,
-              resume_from_checkpoint: str = "",
+              batch_size: int = 32,
+              resume_from_checkpoint: str = "output/RecDPO-4-gpu/",
               ):
     compute_dtype = getattr(torch, "bfloat16")
     bnb_config = BitsAndBytesConfig(
@@ -33,7 +35,8 @@ def inference(dataset="",
         # quantization_config=bnb_config,
     )
 
-    if resume_from_checkpoint != "":
+    if resume_from_checkpoint:
+        print(f"Evaluate the model from checkpoint {resume_from_checkpoint}!")
         model = PeftModel.from_pretrained(model, resume_from_checkpoint)
     model.eval()
 
@@ -62,7 +65,7 @@ def inference(dataset="",
         return dic
 
     data_files = {
-        "test": "/home/ericwen/Rec-PO/data/movielens-1m/movielens-cans20-test.json",
+        "test": "./data/movielens-1m/movielens-cans20-test.json",
     }
 
     data = load_dataset("json", data_files=data_files)
