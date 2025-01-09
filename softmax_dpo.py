@@ -1,4 +1,5 @@
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 import random
 
 import torch
@@ -22,13 +23,15 @@ def train(
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
         prompt_path="./prompt/movie_rating2.txt",
-        dataset="",
-        resume_from_checkpoint: str = "output/SFT-multi-gpu/",  # either training checkpoint or final adapter
+        train_dataset: str = "10000",
+        resume_from_checkpoint: str = "output/Base-1B-SFT-gpu4/",  # either training checkpoint or final adapter
         # wandb config
+        report_to: str = "none",
         wandb_project: str = "RecPo",
         wandb_name: str = "SDPO",  # the name of the wandb run
         # training hyperparameters
         beta: float = 1,
+        sft_weight: float = 0,
         neg_num: int = 3,
         batch_size: int = 4,
         gradient_accumulation_steps: int = 8,
@@ -37,13 +40,12 @@ def train(
         prompt_cutoff_len: int = 480,
         cutoff_len: int = 512,
         eval_step=0.1,
-        report_to: str = "none"
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
 
     data_files = {
-        "train": "./data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val.json",
+        "train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
+        "validation": "./data/movielens-1m/movielens-cans20-val-new.json",
     }
 
     def convert_dict_to_prompt(d: dict):
@@ -86,14 +88,16 @@ def train(
                 dic[f"rejected{j + 1}"].append(rejected)
         return dic
 
-    data = load_dataset("json", data_files=data_files)
 
+    data = load_dataset("json", data_files=data_files)
     columns = data["train"].column_names
-    train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
+    train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
+                                   load_from_cache_file=False).shuffle(seed=42)
     print(train_data)
 
     # random 2000 samples for validation
-    val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
+    val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
+                                      load_from_cache_file=False).shuffle(seed=42)
     if val_data.num_rows > 2000:
         val_data = val_data.select(range(2000))
     print(val_data)
@@ -140,18 +144,17 @@ def train(
 
     training_args = TrainingArguments(
         per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
         max_grad_norm=0.3,
         num_train_epochs=num_train_epochs,
         learning_rate=learning_rate,
         bf16=True,
-        save_strategy="steps",
-        save_steps=eval_step,
-        save_total_limit=100,
-        evaluation_strategy="steps",
+        save_strategy="no",
+        # save_steps=eval_step,
+        eval_strategy="steps",
         eval_steps=eval_step,
-        load_best_model_at_end=True,
         logging_steps=1,
         output_dir=output_dir,
         report_to=report_to,
@@ -169,6 +172,7 @@ def train(
         reference_model,
         args=training_args,
         beta=beta,
+        sft_weight=sft_weight,
         train_dataset=train_data,
         eval_dataset=val_data,
         tokenizer=tokenizer,

@@ -55,6 +55,7 @@ class RecPOConfig(TrainingArguments):
     beta: float = 1.0
     simpo_gamma: Optional[float] = None
     sft_weight: float = 0.0
+    ln: Optional[bool] = None
     label_smoothing: float = 0
     loss_type: Literal["sigmoid", "simpo", "hinge", "ipo", "cpo"] = "sigmoid"
     disable_dropout: bool = True
@@ -75,5 +76,3 @@ class RecPOConfig(TrainingArguments):
     use_score: bool = True
     margin_lambda: Optional[float] = None
     ratio: bool = False
-    ln: Optional[bool] = None
-    cpo_alpha: Optional[float] = None

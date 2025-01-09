@@ -1,4 +1,5 @@
 import os
+# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
 import torch
@@ -19,9 +20,9 @@ def train(
         # path
         output_dir: str = "output/",
         logging_dir: str = "log/",
-        model_name: str = "meta-llama/Llama-3.2-1B-Instruct",
+        model_name: str = "meta-llama/Llama-3.2-1B",
         prompt_path="./prompt/movie_rating2.txt",
-        dataset: str = "",
+        train_dataset: str = "10000",
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
         # wandb config
         wandb_project: str = "RecPO",
@@ -32,7 +33,7 @@ def train(
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
         cutoff_len: int = 512,
-        eval_step=0.2,
+        eval_step=0.1,
         report_to: str = "none",
 
 ):
@@ -58,21 +59,19 @@ def train(
         return dic
 
     data_files = {
-        "train": "./data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val.json",
+        f"train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
+        "validation": "./data/movielens-1m/movielens-cans20-val-new.json",
     }
 
     data = load_dataset("json", data_files=data_files)
-
-    train_data = data["train"].shuffle(seed=42).map(process_data)
-    train_data = train_data.remove_columns(data["train"].column_names)
+    columns = data["train"].column_names
+    train_data = data["train"].shuffle(seed=42).map(process_data, remove_columns=columns,
+                                                    num_proc=8, load_from_cache_file=False)
     print(train_data)
 
-    val_data = data["validation"].shuffle(seed=42).map(process_data)
-
-    # test_data = data["test"].map(process_data)
-    # val_data = val_data.remove_columns(data["validation"].column_names)
-    # print(train_data.column_names)
+    val_data = data["validation"].shuffle(seed=42).map(process_data, remove_columns=columns,
+                                                       num_proc=8, load_from_cache_file=False)
+    print(val_data)
 
     bnb_config = BitsAndBytesConfig(
         # load_in_8bit=True,
@@ -122,6 +121,7 @@ def train(
 
     training_args = SFTConfig(
         per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
         max_grad_norm=0.3,
@@ -129,9 +129,8 @@ def train(
         learning_rate=learning_rate,
         max_seq_length=cutoff_len,
         bf16=True,
-        save_strategy="steps",
-        save_steps=eval_step,
-        load_best_model_at_end=True,
+        save_strategy="no",
+        # save_steps=eval_step,
         evaluation_strategy="steps",
         eval_steps=eval_step,
         logging_steps=1,
@@ -145,7 +144,6 @@ def train(
         gradient_checkpointing_kwargs={'use_reentrant': True},
         save_only_model=True,
         ddp_find_unused_parameters=False,
-        # should set to False becuase there are no unused parameters in the forward process
     )
 
     trainer = SFTTrainer(

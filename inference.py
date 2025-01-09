@@ -1,11 +1,9 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 from datasets import load_dataset
 from transformers import LlamaTokenizer, LlamaForCausalLM, BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM
 from Prompt import *
 import torch
-from torch.utils.data import DataLoader
-import transformers
 from evaluate_batch import evaluate
 from peft import PeftModel, prepare_model_for_kbit_training
 from accelerate import Accelerator
@@ -13,11 +11,15 @@ import fire
 
 
 def inference(dataset="",
-              model_name="meta-llama/Llama-3.2-1B-Instruct",
+              model_name="meta-llama/Llama-3.1-8B",
               prompt_path="./prompt/movie_rating2.txt",
               batch_size: int = 32,
-              resume_from_checkpoint: str = "output/RecDPO-4-gpu/",
+              resume_from_checkpoint: str = "./output/Base-8B-RecDPO-wSFT-gpu4/",
               ):
+
+    if "Base" in resume_from_checkpoint:
+        assert "Instruct" not in model_name
+
     compute_dtype = getattr(torch, "bfloat16")
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -29,6 +31,7 @@ def inference(dataset="",
     device_index = Accelerator().process_index
     device_map = {"": device_index}
 
+    print(f"Load the base model {model_name}!")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map=device_map,
@@ -36,8 +39,10 @@ def inference(dataset="",
     )
 
     if resume_from_checkpoint:
-        print(f"Evaluate the model from checkpoint {resume_from_checkpoint}!")
+        print(f"Evaluate the model checkpoint {resume_from_checkpoint}!")
         model = PeftModel.from_pretrained(model, resume_from_checkpoint)
+    else:
+        print(f"Use base model {model_name} for evaluation!")
     model.eval()
 
     if "Llama-3" in model_name:
@@ -62,10 +67,12 @@ def inference(dataset="",
         prompt = str(t)
         dic = data_point
         dic["prompt"] = prompt[:-1]
+        # dic["prompt"] = prompt
         return dic
 
     data_files = {
-        "test": "./data/movielens-1m/movielens-cans20-test.json",
+        # "train": f"./data/movielens-1m/movielens-size10000-cans20-train.json",
+        "test": "./data/movielens-1m/movielens-cans20-test-new.json",
     }
 
     data = load_dataset("json", data_files=data_files)
@@ -77,6 +84,7 @@ def inference(dataset="",
     accuracy, valid_ratio = evaluate(model, tokenizer, test_data, batch_size=batch_size)
     print(accuracy, valid_ratio)
 
+    print(f"The results is based on checkpoint {resume_from_checkpoint}!")
 
 if __name__ == "__main__":
     fire.Fire(inference)

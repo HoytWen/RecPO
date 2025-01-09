@@ -23,8 +23,9 @@ import torch.nn.functional as F
 from datasets import Dataset
 from transformers import DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer, TrainingArguments
 from transformers.trainer_callback import TrainerCallback
+from accelerate import PartialState
 
-from .utils import SDPODataCollatorWithPadding, pad_to_length
+from .utils import SDPODataCollatorWithPadding, RecPODataCollatorWithPadding, pad_to_length
 
 
 def is_peft_available():
@@ -84,10 +85,12 @@ class SDPOTrainer(Trainer):
             model: Union[PreTrainedModel, nn.Module] = None,
             ref_model: Union[PreTrainedModel, nn.Module] = None,
             beta: float = 0.1,
+            sft_weight: float = 0,
             args: TrainingArguments = None,
             data_collator: Optional[DataCollator] = None,
             label_pad_token_id: int = -100,
             padding_value: int = 0,
+            is_encoder_decoder: bool = False,
             truncation_mode: str = "keep_end",
             train_dataset: Optional[Dataset] = None,
             eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
@@ -132,13 +135,19 @@ class SDPOTrainer(Trainer):
                 )
                 max_prompt_length = 128
 
-            data_collator = SDPODataCollatorWithPadding(
-                tokenizer,
-                max_length=max_length,
-                max_prompt_length=max_prompt_length,
+            # data_collator = SDPODataCollatorWithPadding(
+            #     tokenizer,
+            #     max_length=max_length,
+            #     max_prompt_length=max_prompt_length,
+            #     label_pad_token_id=label_pad_token_id,
+            #     padding_value=padding_value,
+            #     truncation_mode=truncation_mode,
+            # )
+
+            data_collator = RecPODataCollatorWithPadding(
+                pad_token_id=tokenizer.pad_token_id,
                 label_pad_token_id=label_pad_token_id,
-                padding_value=padding_value,
-                truncation_mode=truncation_mode,
+                is_encoder_decoder=is_encoder_decoder,
             )
 
             if args.remove_unused_columns:
@@ -158,9 +167,21 @@ class SDPOTrainer(Trainer):
         self.padding_value = padding_value
 
         self.beta = beta
+        self.sft_weight = sft_weight
         self.ref_model = ref_model
+        self.is_encoder_decoder = is_encoder_decoder
+        self.max_length = max_length
+        self.max_prompt_length = max_prompt_length
+        self.truncation_mode = truncation_mode
+        self.tokenizer = tokenizer
 
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
+
+        with PartialState().local_main_process_first():
+            # tokenize the dataset
+            train_dataset = train_dataset.map(self.tokenize_row, num_proc=None)
+            if eval_dataset is not None:
+                eval_dataset = eval_dataset.map(self.tokenize_row, num_proc=None)
 
         super().__init__(
             model,
@@ -183,6 +204,99 @@ class SDPOTrainer(Trainer):
             raise AttributeError(
                 "Your `Trainer` does not have an `accelerator` object. Consider upgrading `transformers`."
             )
+
+    def tokenize_row(self, feature) -> Dict:
+
+        prompt = feature["prompt"]
+        chosen = feature["chosen"]
+        rejected = {}
+        for key in feature:
+            if key.startswith("rejected") and not key.endswith("score"):
+                rejected[key] = feature[key]
+
+        prompt_tokens = self.tokenizer(prompt, add_special_tokens=False)
+        chosen_tokens = self.tokenizer(chosen, add_special_tokens=False)
+        rejected_tokens = {}
+        for key in rejected:
+            rejected_tokens[key] = self.tokenizer(rejected[key], add_special_tokens=False)
+
+        assert self.tokenizer.bos_token_id not in prompt_tokens["input_ids"], f"Prompt contains BOS token: {prompt}"
+        assert self.tokenizer.eos_token_id not in prompt_tokens["input_ids"], f"Prompt contains EOS token: {prompt}"
+        assert (
+                self.tokenizer.eos_token_id not in chosen_tokens["input_ids"]
+        ), f"Chosen response contains EOS token: {chosen}"
+        assert (
+            all([self.tokenizer.eos_token_id not in rejected_tokens[key]["input_ids"] for key in rejected_tokens])
+        ), f"Rejected response contains EOS token: {rejected}"
+
+        prompt_tokens["input_ids"] = [self.tokenizer.bos_token_id] + prompt_tokens["input_ids"]
+        prompt_tokens["attention_mask"] = [1] + prompt_tokens["attention_mask"]
+        chosen_tokens["input_ids"].append(self.tokenizer.eos_token_id)
+        chosen_tokens["attention_mask"].append(1)
+        for key in rejected_tokens:
+            rejected_tokens[key]["input_ids"].append(self.tokenizer.eos_token_id)
+            rejected_tokens[key]["attention_mask"].append(1)
+
+        max_rejected_len = max([len(rejected_tokens[key]["input_ids"]) for key in rejected_tokens])
+        longer_response_length = max(len(chosen_tokens["input_ids"]), max_rejected_len)
+
+        # if combined sequence is too long, truncate the prompt
+        if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:
+            if self.truncation_mode == "keep_start":
+                prompt_tokens = {k: v[: self.max_prompt_length] for k, v in prompt_tokens.items()}
+            elif self.truncation_mode == "keep_end":
+                prompt_tokens = {k: v[-self.max_prompt_length:] for k, v in prompt_tokens.items()}
+            else:
+                raise ValueError(f"Unknown truncation mode: {self.truncation_mode}")
+
+        # if that's still too long, truncate the response
+        if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:
+            chosen_tokens = {k: v[: self.max_length - self.max_prompt_length] for k, v in chosen_tokens.items()}
+            rejected_tokens = {k: v[: self.max_length - self.max_prompt_length] for k, v in rejected_tokens.items()}
+
+        # Create labels
+        chosen_sequence_tokens = {k: prompt_tokens[k] + chosen_tokens[k] for k in chosen_tokens}
+        rejected_sequence_tokens = {}
+        # rejected_tokens: Dict[str, Dict]
+        for key in rejected_tokens:
+            rejected_sequence_tokens[key] = {k: prompt_tokens[k] + rejected_tokens[key][k] for k in
+                                             rejected_tokens[key]}
+        chosen_sequence_tokens["labels"] = chosen_sequence_tokens["input_ids"][:]
+        chosen_sequence_tokens["labels"][: len(prompt_tokens["input_ids"])] = [self.label_pad_token_id] * len(
+            prompt_tokens["input_ids"]
+        )
+        for key in rejected_sequence_tokens:
+            rejected_sequence_tokens[key]["labels"] = rejected_sequence_tokens[key]["input_ids"][:]
+            rejected_sequence_tokens[key]["labels"][: len(prompt_tokens["input_ids"])] = (
+                    [self.label_pad_token_id] * len(prompt_tokens["input_ids"]))
+
+        batch = {}
+
+        batch["prompt"] = prompt
+        batch["chosen"] = prompt + chosen
+        for key in rejected:
+            batch[key] = prompt + rejected[key]
+        batch["chosen_response_only"] = chosen
+        for key in rejected:
+            batch[f"{key}_response_only"] = rejected[key]
+
+        for k, toks in {
+            "chosen": chosen_sequence_tokens,
+            # "rejected": rejected_sequence_tokens,
+            "prompt": prompt_tokens,
+        }.items():
+            for type_key, tokens in toks.items():
+                if type_key == "token_type_ids":
+                    continue
+                batch[f"{k}_{type_key}"] = tokens
+        # rejected_sequence_tokens: Dict[str, Dict]
+        for k, toks in rejected_sequence_tokens.items():
+            for type_key, tokens in toks.items():
+                if type_key == "token_type_ids":
+                    continue
+                batch[f"{k}_{type_key}"] = tokens
+
+        return batch
 
     def concatenated_inputs(self, batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
         """Concatenate the chosen and rejected inputs into a single tensor.
@@ -300,7 +414,7 @@ class SDPOTrainer(Trainer):
 
     def concatenated_forward(
             self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
-    ) -> Tuple[torch.FloatTensor, Dict[str, torch.FloatTensor], torch.FloatTensor, Dict[str, torch.FloatTensor]]:
+    ) -> Tuple[torch.FloatTensor, Dict[str, torch.FloatTensor], torch.FloatTensor, Dict[str, torch.FloatTensor], torch.FloatTensor]:
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
         We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -316,6 +430,27 @@ class SDPOTrainer(Trainer):
             concatenated_batch["concatenated_labels"],
             average_log_prob=False,
         )
+        len_chosen = batch["chosen_labels"].shape[0]
+        def cross_entropy_loss(logits, labels):
+            if not self.is_encoder_decoder:
+                # Shift so that tokens < n predict n
+                logits = logits[..., :-1, :].contiguous()
+                labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            logits = logits.view(-1, logits.shape[-1])
+            labels = labels.view(-1)
+            # Enable model parallelism
+            labels = labels.to(logits.device)
+            loss = loss_fct(logits, labels)
+            return loss
+
+        labels = concatenated_batch["concatenated_labels"].clone()
+        if self.sft_weight == 0:
+            nll_loss = torch.tensor(0.0).to(self.accelerator.device)
+        else:
+            nll_loss = cross_entropy_loss(all_logits[:len_chosen], labels[:len_chosen])
+
         chosen_logps = all_logps[: batch["chosen_input_ids"].shape[0]]
         step = batch["chosen_input_ids"].shape[0]
         rejected_logps = {}
@@ -332,7 +467,8 @@ class SDPOTrainer(Trainer):
             if key.startswith("rejected") and key.endswith("_input_ids"):
                 cnt += 1
                 rejected_logits[f"rejected{cnt}"] = all_logits[step * cnt: step * (cnt + 1)]
-        return (chosen_logps, rejected_logps, chosen_logits, rejected_logits)
+
+        return (chosen_logps, rejected_logps, chosen_logits, rejected_logits, nll_loss)
 
     def get_batch_metrics(
             self,
@@ -348,11 +484,13 @@ class SDPOTrainer(Trainer):
             policy_rejected_logps,
             policy_chosen_logits,
             policy_rejected_logits,
+            policy_nll_loss,
         ) = self.concatenated_forward(model, batch)
         with torch.no_grad():
             (
                 reference_chosen_logps,
                 reference_rejected_logps,
+                _,
                 _,
                 _,
             ) = self.concatenated_forward(self.ref_model, batch)
@@ -364,7 +502,8 @@ class SDPOTrainer(Trainer):
             reference_rejected_logps,
         )
 
-        # reward_accuracies 记录 chosen 比所有 rejected 的收益都大的比例是多少
+        loss = losses.mean() + self.sft_weight * policy_nll_loss
+
         reward_accuracies = None
         for key in rejected_rewards:
             if reward_accuracies is None:
@@ -385,8 +524,9 @@ class SDPOTrainer(Trainer):
         for key in policy_rejected_logits:
             metrics[f"{prefix}logits/rejected-{key}"] = policy_rejected_logits[key].detach().cpu().numpy().mean()
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().cpu().numpy().mean()
+        metrics[f"{prefix}nll_loss"] = policy_nll_loss.detach().mean().cpu()
 
-        return losses.mean(), metrics
+        return loss, metrics
 
     def compute_loss(
             self,

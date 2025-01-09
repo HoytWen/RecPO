@@ -242,6 +242,7 @@ class RecDPOTrainer(Trainer):
         self.margin_lambda = args.margin_lambda
         self.label_smoothing = args.label_smoothing
         self.loss_type = args.loss_type
+        self.sft_weight = args.sft_weight
         self.aux_loss_enabled = getattr(model.config, "output_router_logits", False)
 
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
@@ -532,7 +533,7 @@ class RecDPOTrainer(Trainer):
 
     def concatenated_forward(
             self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
-    ) -> Tuple[torch.FloatTensor, Dict[str, torch.FloatTensor], torch.FloatTensor, Dict[str, torch.FloatTensor]]:
+    ) -> Tuple[torch.FloatTensor, Dict[str, torch.FloatTensor], torch.FloatTensor, Dict[str, torch.FloatTensor],torch.FloatTensor]:
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
         We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -552,6 +553,29 @@ class RecDPOTrainer(Trainer):
             use_cache=False,
         )
         all_logits = output.logits.to(torch.float32)
+
+
+        def cross_entropy_loss(logits, labels):
+            if not self.is_encoder_decoder:
+                # Shift so that tokens < n predict n
+                logits = logits[..., :-1, :].contiguous()
+                labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            logits = logits.view(-1, logits.shape[-1])
+            labels = labels.view(-1)
+            # Enable model parallelism
+            labels = labels.to(logits.device)
+            loss = loss_fct(logits, labels)
+            return loss
+
+        labels = concatenated_batch["concatenated_labels"].clone()
+
+        if self.sft_weight == 0:
+            nll_loss = torch.tensor(0.0).to(self.accelerator.device)
+        else:
+            nll_loss = cross_entropy_loss(all_logits[:len_chosen], labels[:len_chosen])
+
 
         all_logps = self._get_batch_logps(
             all_logits,
@@ -579,7 +603,7 @@ class RecDPOTrainer(Trainer):
                 rejected_logits[f"rejected{cnt}"] = all_logits[step * cnt: step * (cnt + 1)]
 
 
-        return (chosen_logps, rejected_logps, chosen_logits, rejected_logits)
+        return (chosen_logps, rejected_logps, chosen_logits, rejected_logits, nll_loss)
 
     def get_batch_metrics(
             self,
@@ -595,12 +619,14 @@ class RecDPOTrainer(Trainer):
             policy_rejected_logps,
             policy_chosen_logits,
             policy_rejected_logits,
+            policy_nll_loss
         ) = self.concatenated_forward(model, batch)
 
         with torch.no_grad():
             (
                 reference_chosen_logps,
                 reference_rejected_logps,
+                _,
                 _,
                 _,
             ) = self.concatenated_forward(self.ref_model, batch)
@@ -627,6 +653,8 @@ class RecDPOTrainer(Trainer):
                 reference_rejected_logps,
             )
 
+        loss = losses.mean() + self.sft_weight * policy_nll_loss
+
         # reward_accuracies 记录 chosen 比所有 rejected 的收益都大的比例是多少
         reward_accuracies = None
         for key in rejected_rewards:
@@ -648,8 +676,9 @@ class RecDPOTrainer(Trainer):
         for key in policy_rejected_logits:
             metrics[f"{prefix}logits/rejected-{key}"] = policy_rejected_logits[key].detach().cpu().numpy().mean()
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().cpu().numpy().mean()
+        metrics[f"{prefix}nll_loss"] = policy_nll_loss.detach().mean().cpu()
 
-        return losses.mean(), metrics
+        return loss, metrics
 
     def compute_loss(
             self,

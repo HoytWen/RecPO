@@ -218,7 +218,7 @@ class RecCPOTrainer(Trainer):
         self.margin_lambda = args.margin_lambda
         self.label_smoothing = args.label_smoothing
         self.loss_type = args.loss_type
-        self.cpo_alpha = args.cpo_alpha
+        self.sft_weight = args.sft_weight
         self.ln = args.ln
         self.aux_loss_enabled = getattr(model.config, "output_router_logits", False)
 
@@ -553,7 +553,7 @@ class RecCPOTrainer(Trainer):
 
         labels = concatenated_batch["concatenated_labels"].clone()
 
-        if self.cpo_alpha == 0:
+        if self.sft_weight == 0:
             nll_loss = torch.tensor(0.0).to(self.accelerator.device)
         else:
             nll_loss = cross_entropy_loss(all_logits[:len_chosen], labels[:len_chosen])
@@ -621,7 +621,8 @@ class RecCPOTrainer(Trainer):
                 policy_rejected_logps,
             )
 
-        loss = losses.mean() + self.cpo_alpha * policy_nll_loss
+        loss = losses.mean() + self.sft_weight * policy_nll_loss
+
         # reward_accuracies 记录 chosen 比所有 rejected 的收益都大的比例是多少
         reward_accuracies = None
         for key in rejected_rewards:

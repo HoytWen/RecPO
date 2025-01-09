@@ -1,5 +1,6 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
 import torch
@@ -17,7 +18,6 @@ from Prompt import Prompt
 from trainer.rec_dpo_trainer import RecDPOTrainer
 from trainer.recpo_config import RecPOConfig
 
-os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 
 random.seed(1958)
 
@@ -27,7 +27,7 @@ def train(
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
         prompt_path="./prompt/movie_rating2.txt",
-        dataset="",
+        train_dataset: str = "50000",
         resume_from_checkpoint: str = "output/SFT-4-gpu/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
@@ -37,7 +37,7 @@ def train(
         beta: float = 1.,
         simpo_gamma: float = 0.,
         margin_lambda: float = 0.5,
-        cpo_alpha: float = 0.,
+        sft_weight: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo", "cpo"] = "sigmoid",
         ln: bool = False,
         neg_num: int = 3,
@@ -49,12 +49,13 @@ def train(
         cutoff_len: int = 512,
         eval_step=0.1,
         use_score: bool = True,
+        ratio: bool = False,
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
 
     data_files = {
-        "train": "./data/movielens-1m/movielens-size10000-cans20-train.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val.json",
+        "train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
+        "validation": f"./data/movielens-1m/movielens-cans20-val-new.json",
     }
 
     def convert_dict_to_prompt(d: dict):
@@ -101,7 +102,6 @@ def train(
             else:
                 sample_neg_scores = [0.] * neg_num
 
-
             dic["prompt"].append(prompt)
             dic["chosen"].append(chosen)
             dic["chosen_score"].append(chosen_score)
@@ -115,15 +115,15 @@ def train(
 
     data = load_dataset("json", data_files=data_files)
     columns = data["train"].column_names
-    train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
+    train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
+                                   load_from_cache_file=False).shuffle(seed=42)
     print(train_data)
 
     # random 2000 samples for validation
-    val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8, batched=True).shuffle(seed=42)
-
+    val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
+                                      load_from_cache_file=False).shuffle(seed=42)
     if val_data.num_rows > 2000:
         val_data = val_data.select(range(2000))
-
     print(val_data)
 
     device_index = Accelerator().process_index
@@ -170,9 +170,10 @@ def train(
         beta=beta,
         margin_lambda=margin_lambda,
         simpo_gamma=simpo_gamma,
-        cpo_alpha=cpo_alpha,
+        sft_weight=sft_weight,
         ln=ln,
         per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
         max_grad_norm=0.3,
@@ -181,11 +182,10 @@ def train(
         bf16=True,
         loss_type=loss_type,
         truncation_mode="keep_end",
-        save_strategy="steps",
-        save_steps=eval_step,
-        evaluation_strategy="steps",
+        save_strategy="no",
+        # save_steps=eval_step,
+        eval_strategy="steps",
         eval_steps=eval_step,
-        load_best_model_at_end=True,
         logging_steps=1,
         output_dir=output_dir,
         run_name=wandb_name,
@@ -199,6 +199,7 @@ def train(
         max_prompt_length=prompt_cutoff_len,
         max_length=cutoff_len,
         use_score=use_score,
+        ratio=ratio
     )
 
     rec_po_trainer = RecDPOTrainer(

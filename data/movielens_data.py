@@ -24,13 +24,14 @@ class MovielensData_rating(data.Dataset):
                  stage=None,
                  cans_num=10,
                  sep="::",
+                 cans_select_mode='both',
                  add_mv_year=False,
                  max_size=10000,
                  no_augment=True,
                  seq_len_min=5,
                  seq_len_max=20,
                  rating_threshold=4,
-                 decay_factor = 0.5):
+                 decay_factor=0.5):
         self.__dict__.update(locals())
         self.data_dir = data_dir
         self.stage = stage
@@ -46,6 +47,7 @@ class MovielensData_rating(data.Dataset):
         self.seq_len_max = seq_len_max
         self.rating_threshold = rating_threshold
         self.decay_factor = decay_factor
+        self.cans_select_mode = cans_select_mode
 
 
     def __len__(self):
@@ -56,14 +58,18 @@ class MovielensData_rating(data.Dataset):
         temp = self.session_data.iloc[i]
 
         if self.stage in ['train']:
-            random_cans_num = max(0, self.cans_num-len(temp['follow_seq']))
-            cans_id = self.negative_sampling(temp['seq_unpad'], temp['follow_seq'], random_cans_num)
 
-            ranking_cans_id, ranking_cans_score = self.candidate_ranking(cans_id, temp['follow_rating'], random_cans_num)
+            random_cans_num = max(0, self.cans_num-len(temp['follow_seq']))
+            # cans_id = self.negative_sampling(temp['seq_unpad'], temp['follow_seq'], random_cans_num)
+            random_cans = self.negative_sampling(temp['seq_unpad'], temp['follow_seq'], random_cans_num)
+
+            ranking_cans_id, ranking_cans_score, rating_negative_cans_id, random_negative_cans_id = (
+                self.candidate_ranking(temp['follow_seq'], random_cans, temp['follow_rating'], random_cans_num))
             ranking_cans_name = [self.item_id2name[can] for can in ranking_cans_id]
+            rating_negative_cans_name = [self.item_id2name[can] for can in rating_negative_cans_id]
+            random_negative_cans_name = [self.item_id2name[can] for can in random_negative_cans_id]
 
             sample = {
-                'seq': temp['seq_unpad'],
                 'seq_name': temp['seq_title'],
                 'seq_rating': temp['seq_rating_unpad'],
                 'len_seq': len(temp['seq_unpad']),
@@ -73,6 +79,10 @@ class MovielensData_rating(data.Dataset):
                 'cans': ranking_cans_id,
                 'cans_name': ranking_cans_name,
                 'cans_score': ranking_cans_score,
+                'rating_negative_cans_id': rating_negative_cans_id,
+                'rating_negative_cans_name': rating_negative_cans_name,
+                'random_negative_cans_id': random_negative_cans_id,
+                'random_negative_cans_name': random_negative_cans_name,
                 'len_cans': self.cans_num,
                 'user_id': temp['user_id'],
                 'next_id': temp['next_item_id'],
@@ -84,17 +94,20 @@ class MovielensData_rating(data.Dataset):
 
         else:
             random_cans_num = self.cans_num - 1
-            cans_id = self.negative_sampling(temp['seq_unpad'], temp['next_item_id'], random_cans_num)
+            random_cans = self.negative_sampling(temp['seq_unpad'], temp['next_item_id'], random_cans_num)
+            cans_id = [temp['next_item_id']] + random_cans
             cans_name = [self.item_id2name[can] for can in cans_id]
+            random_negative_cans_name = [self.item_id2name[can] for can in random_cans]
 
             sample = {
-                'seq': temp['seq_unpad'],
                 'seq_name': temp['seq_title'],
                 'seq_rating': temp['seq_rating_unpad'],
                 'len_seq': len(temp['seq_unpad']),
                 'seq_str': self.sep.join(temp['seq_title']),
                 'cans': cans_id,
                 'cans_name': cans_name,
+                'random_negative_cans_id': random_cans,
+                'random_negative_cans_name': random_negative_cans_name,
                 'len_cans': self.cans_num,
                 'user_id': temp['user_id'],
                 'next_id': temp['next_item_id'],
@@ -104,33 +117,41 @@ class MovielensData_rating(data.Dataset):
 
         return sample
 
-    def candidate_ranking(self, cans_list, follow_ratings, sample_sum):
-
-        if sample_sum == 0:
-            rating_list = follow_ratings[:self.cans_num]
-            step = np.arange(len(rating_list)).tolist()
-        else:
-            rating_list = follow_ratings + [3]*sample_sum
-            step = np.arange(len(follow_ratings)).tolist() + [10]*sample_sum
-
-        scores = decay_fn(rating_list, step, self.decay_factor)
-        sorted_index = np.argsort(scores)[::-1]
-
-        cans_list = [cans_list[x] for x in sorted_index]
-
-        return cans_list, scores[sorted_index].tolist()
-
     def negative_sampling(self, seq_unpad, follow_seq, sample_num):
 
         if sample_num == 0:
             return follow_seq[:self.cans_num]
 
-        follow_seq  = follow_seq if isinstance(follow_seq, List) else [follow_seq]
+        follow_seq = follow_seq if isinstance(follow_seq, List) else [follow_seq]
         canset = [i for i in list(self.item_id2name.keys()) if i not in seq_unpad and i not in follow_seq]
-        candidates = follow_seq + random.sample(canset, sample_num)
-        # random.shuffle(candidates)
+        # candidates = follow_seq + random.sample(canset, sample_num)
+        random_candidates = random.sample(canset, sample_num)
 
-        return candidates
+        return random_candidates
+
+    def candidate_ranking(self, rating_cans_list, random_cans_list,  follow_ratings, sample_num):
+
+        if sample_num == 0:
+            cans_list = rating_cans_list[:self.cans_num]
+            rating_list = follow_ratings[:self.cans_num]
+            step = np.arange(len(rating_list)).tolist()
+        else:
+            cans_list = rating_cans_list + random_cans_list
+            rating_list = follow_ratings + [3]*sample_num
+            step = np.arange(len(follow_ratings)).tolist() + [10]*sample_num
+
+        scores = decay_fn(rating_list, step, self.decay_factor)
+        sorted_index = np.argsort(scores)[::-1]
+
+        sorted_cans_list = [cans_list[x] for x in sorted_index]
+        # correct_id = sorted_cans_list[0]
+        # cans_rating_ranked = [rating_list[x] for x in sorted_index]
+
+        rating_negative_sample_index = [x for x in sorted_cans_list[1:] if x in rating_cans_list]
+        random_negative_sample_index = [x for x in sorted_cans_list if x in random_cans_list]
+
+        return (sorted_cans_list, scores[sorted_index].tolist(),
+                rating_negative_sample_index, random_negative_sample_index)
 
     def check_files(self):
         self.item_id2name = self.get_movie_id2name()
@@ -180,12 +201,25 @@ class MovielensData_rating(data.Dataset):
 
     def session_data4frame(self, datapath, movie_id2name):
         train_data = pd.read_pickle(datapath)
-        # train_data = train_data[train_data['len_seq'] >= self.seq_len_min]
+        def top_ranked_follow_seq_rating(seq, seq_rating):
+            step = np.arange(len(seq)).tolist()
+            scores = decay_fn(seq_rating, step, decay_factor=self.decay_factor)
+            sorted_index = np.argsort(scores)[::-1]
+            ranked_rating = [seq_rating[x] for x in sorted_index]
+
+            return ranked_rating[0]
+
         if self.stage in ['val', 'test']:
-            train_data = train_data[train_data['next_item_rating']>=self.rating_threshold]
+            train_data = train_data[train_data['next_item_rating'] >= self.rating_threshold]
 
         else:
             train_data = train_data[train_data['len_seq'] >= self.seq_len_min]
+            train_data['top_ranked_follow_item_rating'] = (
+                train_data.apply(lambda row: top_ranked_follow_seq_rating(row['follow_seq'], row['follow_rating']),
+                                 axis=1))
+            train_data['len_follow'] = train_data['follow_seq'].apply(len)
+            train_data = train_data[(train_data['top_ranked_follow_item_rating'] >= self.rating_threshold) &
+                                    (train_data['len_follow'] == 10)]
             if len(train_data) > self.max_size:
                 train_data = train_data.iloc[torch.randperm(len(train_data))[:self.max_size]]
 
@@ -221,17 +255,6 @@ class MovielensData_rating(data.Dataset):
         train_data['next_item_title'] = train_data['next_item_id'].apply(next_item_title)
         train_data['next_item_rating'] = train_data['next_item_rating'].apply(next_item_rating)
 
-        # def get_id_from_tumple(x):
-        #     return x[0]
-        #
-        # def get_id_from_list(x):
-        #     return [i[0] for i in x]
-
-        # train_data['next'] = train_data['next'].apply(get_id_from_tumple)
-        # train_data['seq'] = train_data['seq'].apply(get_id_from_list)
-        # train_data['seq_unpad'] = train_data['seq_unpad'].apply(get_id_from_list)
-
-
         return train_data
     
 
@@ -241,6 +264,6 @@ if __name__ == "__main__":
     # test_dataloader = DataLoader(LastfmData(stage='test'), batch_size=8, shuffle=False)
 
     data_dir = '/home/ericwen/seq_rec_data/movielens-1m'
-    data = MovielensData_rating(data_dir=data_dir, stage='val', cans_num=20)
+    data = MovielensData_rating(data_dir=data_dir, stage='train', cans_num=20)
 
     print(data[1])

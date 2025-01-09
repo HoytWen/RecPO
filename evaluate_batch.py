@@ -46,12 +46,15 @@ def evaluate(
         return output
 
     targets = []
+    targets_score = []
     inputs = []
     cans = []
     for elm in val_data:
         prompt = elm["prompt"]
         target = elm["trueSelection"]
+        target_score = elm["selectionScore"]
         targets.append(target)
+        targets_score.append(target_score)
         inputs.append(prompt)
         cans.append(elm["itemList"])
 
@@ -64,19 +67,23 @@ def evaluate(
         batch_inputs = inputs[start:end]
         outputs = output_generate(batch_inputs)
         batch_targets = targets[start:end]
+        batch_targets_score = targets_score[start:end]
         batch_cans = cans[start:end]
-        for input_text, output, target, candidates in zip(batch_inputs, outputs, batch_targets, batch_cans):
+        for input_text, output, target, target_score, candidates in zip(batch_inputs, outputs, batch_targets,
+                                                                        batch_targets_score, batch_cans):
             selection = output[len(input_text):]
             num_cans = sum([1 for can in candidates if can in selection])
             print(input_text)
             print(candidates)
             print(selection)
-            print([target])
+            # print(f"Target: {target}, Target Score: {target_score}")
+            print(f"Target: {target}")
             if num_cans == 1:
                 valid += 1
                 if target in selection:
                     score += 1
-                    print(f"score increased to {score}")
+                    print(f"Score increased to {score}")
+                print(f"Valid ratio increased to {valid}")
             print("\n")
 
     return score / len(inputs), valid / len(inputs)
