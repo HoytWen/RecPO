@@ -1,5 +1,5 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 # os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
@@ -25,10 +25,10 @@ def train(
         # train
         output_dir="output/",
         logging_dir="log/",
-        model_name="meta-llama/Llama-3.2-1B-Instruct",
-        prompt_path="./prompt/movie_rating2.txt",
-        train_dataset: str = "50000",
-        resume_from_checkpoint: str = "output/SFT-4-gpu/",  # either training checkpoint or final adapter
+        model_name="meta-llama/Llama-3.2-1B",
+        prompt_path="./prompt/game_rating.txt",
+        train_dataset: str = "steam_10000",
+        resume_from_checkpoint: str = "output/amazon-books/Base-1B-SFT-gpu4/final_checkpoint/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
         wandb_project: str = "RecPO",
@@ -36,7 +36,7 @@ def train(
         # training hyperparameters.
         beta: float = 1.,
         simpo_gamma: float = 0.,
-        margin_lambda: float = 0.5,
+        margin_lambda: float = 1,
         sft_weight: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo", "cpo"] = "sigmoid",
         ln: bool = False,
@@ -45,18 +45,20 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 480,
+        prompt_cutoff_len: int = 412,
         cutoff_len: int = 512,
-        eval_step=0.1,
+        eval_step=1,
         use_score: bool = True,
         ratio: bool = False,
+        negative_selection: str = "both",
 ):
-    os.environ['WANDB_PROJECT'] = wandb_project
 
+    ds_name, training_size = train_dataset.split('_')
     data_files = {
-        "train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
-        "validation": f"./data/movielens-1m/movielens-cans20-val-new.json",
+        f"train": f"data/{ds_name}/{ds_name}-size10000-cans20-train.json",
+        "validation": f"data/{ds_name}/{ds_name}-cans20-val.json",
     }
+    os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
     def convert_dict_to_prompt(d: dict):
         t = Prompt(prompt_path)
@@ -67,7 +69,7 @@ def train(
         t.trueSelection = d["trueSelection"]
         return t
 
-    def process_data(examples):
+    def process_data(examples, selection_mode=negative_selection):
         dic = {"prompt": [], "chosen": [], "chosen_score": []}
         for i in range(1, neg_num + 1):
             dic[f"rejected{i}"] = []
@@ -83,24 +85,40 @@ def train(
             data_point["itemScoreList"] = examples["itemScoreList"][i]
             data_point["selectionScore"] = examples["selectionScore"][i]
 
+            data_point["ratingNegative"] = examples["ratingNegative"][i]
+            data_point["randomNegative"] = examples["randomNegative"][i]
+
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
 
             chosen = data_point["trueSelection"]
             chosen_score = data_point["selectionScore"]
 
-            selection_index = data_point["itemList"].index(data_point["trueSelection"])
-            negative_items = [data_point["itemList"][x] for x in range(len(data_point["itemList"])) if
-                              x != selection_index]
-            indices = random.sample(range(len(negative_items)), neg_num)
-            sample_negs = [negative_items[x] for x in indices]
+            if selection_mode == "both":
+                # negative_items = data_point["ratingNegative"] + data_point["randomNegative"]
+                negative_items = [x for x in data_point["itemList"] if x != chosen]
+            elif selection_mode == "random":
+                negative_items = data_point["randomNegative"]
+            else:
+                if data_point["ratingNegative"]:
+                    negative_items = data_point["ratingNegative"]
+                else:
+                    negative_items = [x for x in data_point["itemList"] if x != chosen]
+
+            if "sort" in selection_mode:
+                sample_negs = negative_items[-neg_num:]
+            else:
+                negative_indices = random.sample(range(len(negative_items)), neg_num)
+                sample_negs = [negative_items[x] for x in negative_indices]
 
             if data_point["itemScoreList"]:
-                negative_scores = [data_point["itemScoreList"][x] for x in range(len(data_point["itemScoreList"])) if
-                                    x != selection_index]
-                sample_neg_scores = [negative_scores[x] for x in indices]
+                sample_neg_scores = []
+                for neg in sample_negs:
+                    negative_index = data_point["itemList"].index(neg)
+                    sample_neg_scores.append(data_point["itemScoreList"][negative_index])
             else:
                 sample_neg_scores = [0.] * neg_num
+
 
             dic["prompt"].append(prompt)
             dic["chosen"].append(chosen)
@@ -108,8 +126,8 @@ def train(
             for j in range(neg_num):
                 rejected = sample_negs[j]
                 rejected_score = sample_neg_scores[j]
-                dic[f"rejected{j+1}"].append(rejected)
-                dic[f"rejected{j+1}_score"].append(rejected_score)
+                dic[f"rejected{j + 1}"].append(rejected)
+                dic[f"rejected{j + 1}_score"].append(rejected_score)
         return dic
 
 
@@ -117,6 +135,9 @@ def train(
     columns = data["train"].column_names
     train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
                                    load_from_cache_file=False).shuffle(seed=42)
+
+    if train_data.num_rows > int(training_size):
+        train_data = train_data.select(range(training_size))
     print(train_data)
 
     # random 2000 samples for validation
@@ -166,6 +187,7 @@ def train(
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
 
+    output_dir = os.path.join(output_dir, ds_name, wandb_name)
     training_args = RecPOConfig(
         beta=beta,
         margin_lambda=margin_lambda,
@@ -182,7 +204,7 @@ def train(
         bf16=True,
         loss_type=loss_type,
         truncation_mode="keep_end",
-        save_strategy="no",
+        save_strategy="epoch",
         # save_steps=eval_step,
         eval_strategy="steps",
         eval_steps=eval_step,
@@ -199,7 +221,7 @@ def train(
         max_prompt_length=prompt_cutoff_len,
         max_length=cutoff_len,
         use_score=use_score,
-        ratio=ratio
+        ratio=ratio,
     )
 
     rec_po_trainer = RecDPOTrainer(
@@ -212,9 +234,9 @@ def train(
     )
     rec_po_trainer.train()
 
-    output_dir = os.path.join(output_dir, wandb_name)
-    rec_po_trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    final_checkpoint_dir = os.path.join(output_dir, "final_checkpoint")
+    rec_po_trainer.save_model(final_checkpoint_dir)
+    tokenizer.save_pretrained(final_checkpoint_dir)
 
 
 if __name__ == "__main__":

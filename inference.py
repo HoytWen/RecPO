@@ -1,7 +1,9 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
+import json
 from datasets import load_dataset
-from transformers import LlamaTokenizer, LlamaForCausalLM, BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM
+from transformers import BitsAndBytesConfig, AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
 from Prompt import *
 import torch
 from evaluate_batch import evaluate
@@ -10,11 +12,12 @@ from accelerate import Accelerator
 import fire
 
 
-def inference(dataset="",
+def inference(dataset="amazon-books_10000",
               model_name="meta-llama/Llama-3.1-8B",
-              prompt_path="./prompt/movie_rating2.txt",
-              batch_size: int = 32,
-              resume_from_checkpoint: str = "./output/Base-8B-RecDPO-wSFT-gpu4/",
+              prompt_path="./prompt/book_rating1.txt",
+              batch_size: int = 8,
+              resume_from_checkpoint: str = "/mnt/ssd3/zhongyu/RecPO/output/amazon-books/Base-8B-RecDPO-wSFT-ratio-ml2-gpu4/final_checkpoint/",
+              save_output: bool = True,
               ):
 
     if "Base" in resume_from_checkpoint:
@@ -70,21 +73,34 @@ def inference(dataset="",
         # dic["prompt"] = prompt
         return dic
 
+    ds_name, training_size = dataset.split('_')
     data_files = {
         # "train": f"./data/movielens-1m/movielens-size10000-cans20-train.json",
-        "test": "./data/movielens-1m/movielens-cans20-test-new.json",
+        "test": f"./data/{ds_name}/{ds_name}-cans20-test.json",
     }
 
     data = load_dataset("json", data_files=data_files)
     data.cleanup_cache_files()
     print(data)
 
-    test_data = data["test"].map(generate_and_tokenize_prompt)
+    test_data = data["test"].map(generate_and_tokenize_prompt, load_from_cache_file=False)
+    # test_data = test_data.select(range(20))
 
-    accuracy, valid_ratio = evaluate(model, tokenizer, test_data, batch_size=batch_size)
+    if save_output:
+        accuracy, valid_ratio, correct_variance, valid_variance, all_variance, output_dict = (
+            evaluate(model, tokenizer, test_data, batch_size=batch_size, save_output=save_output))
+
+        # save_path = resume_from_checkpoint.split('final_checkpoint')[0]
+        with open(os.path.join(resume_from_checkpoint, "generation_output.json"), "w") as f:
+            json.dump(output_dict, f, indent=4)
+
+    else:
+        accuracy, valid_ratio, correct_variance, valid_variance, all_variance = (
+            evaluate(model, tokenizer, test_data, batch_size=batch_size))
     print(accuracy, valid_ratio)
-
+    print(correct_variance, valid_variance, all_variance)
     print(f"The results is based on checkpoint {resume_from_checkpoint}!")
+
 
 if __name__ == "__main__":
     fire.Fire(inference)

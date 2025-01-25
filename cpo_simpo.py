@@ -39,16 +39,17 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 480,
+        prompt_cutoff_len: int = 384,
         cutoff_len: int = 512,
         eval_step=0.1,
 ):
-    os.environ['WANDB_PROJECT'] = wandb_project
 
+    ds_name, training_size = train_dataset.split('_')
     data_files = {
-        f"train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val-new.json",
+        f"train": f"./data/{ds_name}/{ds_name}-size10000-cans20-train.json",
+        "validation": f"./data/{ds_name}/{ds_name}-cans20-val.json",
     }
+    os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
     def convert_dict_to_prompt(d: dict):
         t = Prompt(prompt_path)
@@ -84,6 +85,8 @@ def train(
     columns = data["train"].column_names
     train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
                                    load_from_cache_file=False).shuffle(seed=42)
+    if train_data.num_rows > int(training_size):
+        train_data = train_data.select(range(training_size))
     print(train_data)
 
     # random 2000 samples for validation
@@ -130,6 +133,7 @@ def train(
     else:
         simpo_gamma = 0
 
+    output_dir = os.path.join(output_dir, ds_name, wandb_name)
     training_args = CPOConfig(
         beta=beta,
         cpo_alpha=cpo_alpha,

@@ -21,9 +21,14 @@ class Prompt:
         comb_list = []
         for i in range(len(self.historyList)):
             item_title = self.historyList[i]
+
             item_title = "Title: " + f"'{item_title}'"
             item_rating = "Rating: " + self.historyRatingList[i]
             item_comb = ", ".join([item_title, item_rating])
+
+            # item_title = f"<{item_title}>"
+            # item_rating = f"[{self.historyRatingList[i]}]"
+            # item_comb = "".join([item_title, item_rating])
             comb_list.append(item_comb)
 
         return comb_list
@@ -32,10 +37,9 @@ class Prompt:
         # a = self.historyList
         prompt = self.templates[random.randint(0, len(self.templates) - 1)]
 
-        # history = ", ".join(self.historyList)
-        # history_ratings = ", ".join(self.historyRatingList)
         history = " | ".join(self.history_to_list)
-        cans = ", ".join(self.itemList)
+        # history = ", ".join(self.history_to_list)
+        cans = " | ".join(self.itemList)
 
         # prompt = prompt.replace("[ViewHistory]", history)
         # prompt = prompt.replace("[RatingHistory]", history_ratings)

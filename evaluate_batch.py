@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 import transformers
@@ -19,7 +20,8 @@ def evaluate(
         model,
         tokenizer,
         val_data,
-        batch_size: int = 32
+        batch_size: int = 32,
+        save_output: bool = False
 ):
     def output_generate(
             prompts,
@@ -29,7 +31,9 @@ def evaluate(
         inputs = tokenizer(prompts, return_tensors="pt", truncation=True, padding=True, max_length=1024).to(
             model.device)
         generation_config = GenerationConfig(
-            # temperature = temperature,
+            # temperature=0.3,
+            # top_k=1,
+            # do_sample=True,
             do_sample=False,
         )
         generation_output = model.generate(
@@ -38,7 +42,7 @@ def evaluate(
             generation_config=generation_config,
             return_dict_in_generate=True,
             output_scores=True,
-            max_new_tokens=20
+            max_new_tokens=128
         )
         s = generation_output.sequences
         output = tokenizer.batch_decode(s, skip_special_tokens=True)
@@ -49,18 +53,25 @@ def evaluate(
     targets_score = []
     inputs = []
     cans = []
+    history_rating_list = []
+    dic_lis = []
     for elm in val_data:
         prompt = elm["prompt"]
         target = elm["trueSelection"]
         target_score = elm["selectionScore"]
+        history_rating = [int(x) for x in elm['historyRatingList']]
         targets.append(target)
         targets_score.append(target_score)
         inputs.append(prompt)
         cans.append(elm["itemList"])
+        history_rating_list.append(history_rating)
 
     batch_num = (len(inputs) - 1) // batch_size + 1
     score = 0
     valid = 0
+    correct_var_list = []
+    valid_var_list = []
+    all_var_list = []
     for i in tqdm(range(batch_num), desc="Testing..."):
         start = i * batch_size
         end = min(len(inputs), start + batch_size)
@@ -69,10 +80,15 @@ def evaluate(
         batch_targets = targets[start:end]
         batch_targets_score = targets_score[start:end]
         batch_cans = cans[start:end]
-        for input_text, output, target, target_score, candidates in zip(batch_inputs, outputs, batch_targets,
-                                                                        batch_targets_score, batch_cans):
-            selection = output[len(input_text):]
+        batch_history_rating = history_rating_list[start:end]
+        for input_text, output, target, target_score, candidates, history_rating in zip(batch_inputs, outputs,
+                                                                        batch_targets, batch_targets_score, batch_cans,
+                                                                        batch_history_rating):
+            # selection = output[len(input_text):]
+            selection = output.split(" Answer:")[-1]
             num_cans = sum([1 for can in candidates if can in selection])
+            valid_flag = False
+            correct_flag = False
             print(input_text)
             print(candidates)
             print(selection)
@@ -80,10 +96,32 @@ def evaluate(
             print(f"Target: {target}")
             if num_cans == 1:
                 valid += 1
+                valid_flag = True
                 if target in selection:
                     score += 1
+                    correct_var_list.append(np.var(history_rating))
+                    correct_flag = True
                     print(f"Score increased to {score}")
+                valid_var_list.append(np.var(history_rating))
                 print(f"Valid ratio increased to {valid}")
+                # print("")
+
+            all_var_list.append(np.var(history_rating))
+            dic = {
+                "prompt": input_text,
+                "candidates": candidates,
+                "selection": selection,
+                "target": target,
+                "validFlag": valid_flag,
+                "correctFlag": correct_flag,
+            }
+            dic_lis.append(dic)
             print("\n")
 
-    return score / len(inputs), valid / len(inputs)
+
+    if save_output:
+        return (score / len(inputs), valid / len(inputs),
+                np.mean(correct_var_list), np.mean(valid_var_list), np.mean(all_var_list), dic_lis)
+    else:
+        return (score / len(inputs), valid / len(inputs),
+                np.mean(correct_var_list), np.mean(valid_var_list), np.mean(all_var_list))

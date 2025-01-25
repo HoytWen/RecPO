@@ -2,18 +2,20 @@ import pandas as pd
 import torch
 
 from movielens_data import MovielensData_rating
+from amazonbooks_data import AmazonBookData_rating
+from steam_data import SteamData_rating
 import json
 from tqdm import tqdm
 
 
 if __name__ == "__main__":
-    splits = ["train"]
-    # splits = ["val", "test", "train"]
+    ds_name = 'steam'
+    splits = ["train", "val", "test"]
     cans_num = 20
-    data_dir = "/home/ericwen/seq_rec_data/movielens-1m"
+    data_dir = f'/mnt/ssd3/zhongyu/seq_rec_data/{ds_name}'
     max_size = 10000
     for split in splits:
-        data_split = MovielensData_rating(data_dir=data_dir, stage=split, cans_num=cans_num, max_size=max_size)
+        data_split = SteamData_rating(data_dir=data_dir, stage=split, cans_num=cans_num, max_size=max_size)
         dic_lis = []
         for i in tqdm(range(len(data_split))):
         ### Add random shuffle
@@ -44,9 +46,9 @@ if __name__ == "__main__":
             dic_lis.append(dic)
 
         if split in ['train']:
-            with open(f"movielens-1m/movielens-size{max_size}-cans{cans_num}-{split}-new.json", "w") as f:
-                json.dump(dic_lis, f, indent=4)
+            with open(f"{ds_name}/{ds_name}-size{max_size}-cans{cans_num}-{split}-origin.json", "w") as f:
+                json.dump(dic_lis, f, indent=4, ensure_ascii=False)
         else:
-            with open(f"movielens-1m/movielens-cans{cans_num}-{split}-new.json", "w") as f:
-                json.dump(dic_lis, f, indent=4)
+            with open(f"{ds_name}/{ds_name}-cans{cans_num}-{split}-origin.json", "w") as f:
+                json.dump(dic_lis, f, indent=4, ensure_ascii=False)
 

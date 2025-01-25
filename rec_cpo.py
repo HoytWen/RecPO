@@ -1,6 +1,6 @@
 import os
 # os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 import random
 
 import torch
@@ -25,16 +25,16 @@ def train(
         output_dir="output/",
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
-        prompt_path="./prompt/movie_rating2.txt",
+        prompt_path="./prompt/movie_rating.txt",
         train_dataset: str = "10000",
-        resume_from_checkpoint: str = "output/SFT-gpu4/",  # either training checkpoint or final adapter
+        resume_from_checkpoint: str = "output/Base-1B-SFT-gpu4/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
         wandb_project: str = "RecPO",
         wandb_name: str = "CPO",  # the name of the wandb run
         # training hyperparameters.
         beta: float = 1.,
-        simpo_gamma: float = 0.5,
+        simpo_gamma: float = 0.0,
         margin_lambda: float = 0.5,
         sft_weight: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo", "cpo"] = "sigmoid",
@@ -49,7 +49,7 @@ def train(
         eval_step=0.1,
         use_score: bool = True,
         ratio: bool = False,
-        negative_selection: str = "rating",
+        negative_selection: str = "both",
 ):
     os.environ['WANDB_PROJECT'] = wandb_project
 
@@ -91,10 +91,10 @@ def train(
 
             chosen = data_point["trueSelection"]
             chosen_score = data_point["selectionScore"]
-            # selection_index = data_point["itemList"].index(data_point["trueSelection"])
 
             if selection_mode == "both":
-                negative_items = data_point["ratingNegative"] + data_point["randomNegative"]
+                # negative_items = data_point["ratingNegative"] + data_point["randomNegative"]
+                negative_items = [x for x in data_point["itemList"] if x != chosen]
             elif selection_mode == "random":
                 negative_items = data_point["randomNegative"]
             else:
@@ -103,8 +103,11 @@ def train(
                 else:
                     negative_items = [x for x in data_point["itemList"] if x != chosen]
 
-            negative_indices = random.sample(range(len(negative_items)), neg_num)
-            sample_negs = [negative_items[x] for x in negative_indices]
+            if "sort" in selection_mode:
+                sample_negs = negative_items[-neg_num:]
+            else:
+                negative_indices = random.sample(range(len(negative_items)), neg_num)
+                sample_negs = [negative_items[x] for x in negative_indices]
 
             if data_point["itemScoreList"]:
                 sample_neg_scores = []
@@ -114,15 +117,14 @@ def train(
             else:
                 sample_neg_scores = [0.] * neg_num
 
-
             dic["prompt"].append(prompt)
             dic["chosen"].append(chosen)
             dic["chosen_score"].append(chosen_score)
             for j in range(neg_num):
                 rejected = sample_negs[j]
                 rejected_score = sample_neg_scores[j]
-                dic[f"rejected{j+1}"].append(rejected)
-                dic[f"rejected{j+1}_score"].append(rejected_score)
+                dic[f"rejected{j + 1}"].append(rejected)
+                dic[f"rejected{j + 1}_score"].append(rejected_score)
         return dic
 
 
@@ -172,6 +174,7 @@ def train(
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
 
+    output_dir = os.path.join(output_dir, wandb_name)
     training_args = RecPOConfig(
         beta=beta,
         simpo_gamma=simpo_gamma,
@@ -188,7 +191,7 @@ def train(
         bf16=True,
         loss_type=loss_type,
         truncation_mode="keep_end",
-        save_strategy="no",
+        save_strategy="epoch",
         # save_steps=eval_step,
         eval_strategy="steps",
         eval_steps=eval_step,
@@ -217,9 +220,9 @@ def train(
     )
     rec_po_trainer.train()
 
-    output_dir = os.path.join(output_dir, wandb_name)
-    rec_po_trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    final_checkpoint_dir = os.path.join(output_dir, "final_checkpoint")
+    rec_po_trainer.save_model(final_checkpoint_dir)
+    tokenizer.save_pretrained(final_checkpoint_dir)
 
 
 if __name__ == "__main__":

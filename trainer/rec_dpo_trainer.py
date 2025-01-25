@@ -24,7 +24,9 @@ from .recpo_config import RecPOConfig
 if is_peft_available():
     from peft import get_peft_model, prepare_model_for_kbit_training
 
-
+plength_list = []
+alength_list = []
+length_list = []
 class RecDPOTrainer(Trainer):
     r"""
     Initialize RecPOTrainer.
@@ -243,6 +245,7 @@ class RecDPOTrainer(Trainer):
         self.label_smoothing = args.label_smoothing
         self.loss_type = args.loss_type
         self.sft_weight = args.sft_weight
+        self.ln = args.ln
         self.aux_loss_enabled = getattr(model.config, "output_router_logits", False)
 
         self._stored_metrics = defaultdict(lambda: defaultdict(list))
@@ -306,6 +309,11 @@ class RecDPOTrainer(Trainer):
 
         max_rejected_len = max([len(rejected_tokens[key]["input_ids"]) for key in rejected_tokens])
         longer_response_length = max(len(chosen_tokens["input_ids"]), max_rejected_len)
+
+        plength_list.append(len(prompt_tokens["input_ids"]))
+        alength_list.append(longer_response_length)
+        longest_length = len(prompt_tokens["input_ids"]) + longer_response_length
+        length_list.append(longest_length)
 
         # if combined sequence is too long, truncate the prompt
         if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:
@@ -474,6 +482,8 @@ class RecDPOTrainer(Trainer):
                 -F.logsigmoid(logits) * (1 - self.label_smoothing)
                 - F.logsigmoid(-1 * logits) * self.label_smoothing
             )
+        # elif self.loss_type == "rDPO":
+        #     gamma = self.gamma_beta_ratio * (len_chosen - len_rejected)
         elif self.loss_type == "hinge":
             logits = sum(torch.exp(self.beta * logits_dict[key]) for key in logits_dict)
             logits = -torch.log(logits)
@@ -580,7 +590,7 @@ class RecDPOTrainer(Trainer):
         all_logps = self._get_batch_logps(
             all_logits,
             concatenated_batch["concatenated_labels"],
-            average_log_prob=False,
+            average_log_prob=self.ln,
             label_pad_token_id=self.label_pad_token_id,
             is_encoder_decoder=self.is_encoder_decoder
         )
@@ -686,7 +696,6 @@ class RecDPOTrainer(Trainer):
             inputs: Dict[str, Union[torch.Tensor, Any]],
             return_outputs=False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
-
         if not self.use_recpo_data_collator:
             warnings.warn(
                 "compute_loss is only implemented for RecPODataCollatorWithPadding, and you passed a datacollator that is different than "

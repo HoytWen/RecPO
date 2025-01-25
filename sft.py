@@ -1,6 +1,5 @@
 import os
-# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
-import random
+# os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
@@ -21,8 +20,8 @@ def train(
         output_dir: str = "output/",
         logging_dir: str = "log/",
         model_name: str = "meta-llama/Llama-3.2-1B",
-        prompt_path="./prompt/movie_rating2.txt",
-        train_dataset: str = "10000",
+        prompt_path="./prompt/game_rating.txt",
+        train_dataset: str = "steam_10000",
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
         # wandb config
         wandb_project: str = "RecPO",
@@ -37,7 +36,6 @@ def train(
         report_to: str = "none",
 
 ):
-    os.environ['WANDB_PROJECT'] = wandb_project
 
     def convert_dict_to_prompt(d: dict):
         t = Prompt(prompt_path)
@@ -58,19 +56,24 @@ def train(
         }
         return dic
 
+    ds_name, training_size = train_dataset.split('_')
     data_files = {
-        f"train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val-new.json",
+        f"train": f"data/{ds_name}/{ds_name}-size10000-cans20-train.json",
+        "validation": f"data/{ds_name}/{ds_name}-cans20-val.json",
     }
+    os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
     data = load_dataset("json", data_files=data_files)
     columns = data["train"].column_names
-    train_data = data["train"].shuffle(seed=42).map(process_data, remove_columns=columns,
-                                                    num_proc=8, load_from_cache_file=False)
+    train_data = data["train"].map(process_data, remove_columns=columns,
+                                    num_proc=8, load_from_cache_file=False).shuffle(seed=42)
     print(train_data)
 
-    val_data = data["validation"].shuffle(seed=42).map(process_data, remove_columns=columns,
-                                                       num_proc=8, load_from_cache_file=False)
+    # random 2000 samples for validation
+    val_data = data["validation"].map(process_data, remove_columns=columns, num_proc=8,
+                                      load_from_cache_file=False).shuffle(seed=42)
+    if val_data.num_rows > 2000:
+        val_data = val_data.select(range(2000))
     print(val_data)
 
     bnb_config = BitsAndBytesConfig(
@@ -119,9 +122,10 @@ def train(
     collator = DataCollatorForCompletionOnlyLM(tokenizer.encode(response_template, add_special_tokens=False)[1:],
                                                tokenizer=tokenizer)
 
+    output_dir = os.path.join(output_dir, ds_name, wandb_name)
     training_args = SFTConfig(
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        # per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
         max_grad_norm=0.3,
@@ -129,7 +133,7 @@ def train(
         learning_rate=learning_rate,
         max_seq_length=cutoff_len,
         bf16=True,
-        save_strategy="no",
+        save_strategy="epoch",
         # save_steps=eval_step,
         evaluation_strategy="steps",
         eval_steps=eval_step,
@@ -158,9 +162,9 @@ def train(
 
     trainer.train()
 
-    output_dir = os.path.join(output_dir, wandb_name)
-    trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    final_checkpoint_dir = os.path.join(output_dir, "final_checkpoint")
+    trainer.save_model(final_checkpoint_dir)
+    tokenizer.save_pretrained(final_checkpoint_dir)
 
 
 if __name__ == "__main__":

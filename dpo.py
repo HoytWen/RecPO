@@ -21,7 +21,7 @@ def train(
         output_dir="output/",
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
-        prompt_path="./prompt/movie_rating2.txt",
+        prompt_path="./prompt/movie_rating.txt",
         train_dataset: str = "50000",
         resume_from_checkpoint: str = "output/SFT-gpu4/",  # either training checkpoint or final adapter
         # wandb config
@@ -36,17 +36,18 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 480,
+        prompt_cutoff_len: int = 384,
         cutoff_len: int = 512,
         eval_step=0.1,
         report_to: str = "none"
 ):
-    os.environ['WANDB_PROJECT'] = wandb_project
 
+    ds_name, training_size = train_dataset.split('_')
     data_files = {
-        f"train": f"./data/movielens-1m/movielens-size{train_dataset}-cans20-train-new.json",
-        "validation": "./data/movielens-1m/movielens-cans20-val-new.json",
+        f"train": f"./data/{ds_name}/{ds_name}-size10000-cans20-train.json",
+        "validation": f"./data/{ds_name}/{ds_name}-cans20-val.json",
     }
+    os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
     def convert_dict_to_prompt(d: dict):
         t = Prompt(prompt_path)
@@ -82,6 +83,8 @@ def train(
     columns = data["train"].column_names
     train_data = data["train"].map(process_data, remove_columns=columns, num_proc=8, batched=True,
                                    load_from_cache_file=False).shuffle(seed=42)
+    if train_data.num_rows > int(training_size):
+        train_data = train_data.select(range(training_size))
     print(train_data)
 
     # random 2000 samples for validation
@@ -130,6 +133,7 @@ def train(
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training
 
+    output_dir = os.path.join(output_dir, ds_name, wandb_name)
     training_args = DPOConfig(
         beta=beta,
         rpo_alpha=rpo_alpha if rpo_alpha > 0 else None,
@@ -170,9 +174,9 @@ def train(
 
     dpo_trainer.train()
 
-    output_dir = os.path.join(output_dir, wandb_name)
-    dpo_trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    final_checkpoint_dir = os.path.join(output_dir, "final_checkpoint")
+    dpo_trainer.save_model(final_checkpoint_dir)
+    tokenizer.save_pretrained(final_checkpoint_dir)
 
 
 if __name__ == "__main__":
