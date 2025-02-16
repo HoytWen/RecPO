@@ -288,7 +288,7 @@ if __name__ == "__main__":
     # train_dataloader = DataLoader(LastfmData(stage='train'), batch_size=2, shuffle=True)
     # test_dataloader = DataLoader(LastfmData(stage='test'), batch_size=8, shuffle=False)
 
-    data_dir = '/mnt/ssd3/zhongyu/seq_rec_data/steam'
+    data_dir = ''
     data = SteamData_rating(data_dir=data_dir, stage='train', cans_num=20)
 
     print(data[1])

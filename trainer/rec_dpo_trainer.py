@@ -24,9 +24,9 @@ from .recpo_config import RecPOConfig
 if is_peft_available():
     from peft import get_peft_model, prepare_model_for_kbit_training
 
-plength_list = []
-alength_list = []
-length_list = []
+# plength_list = []
+# alength_list = []
+# length_list = []
 class RecDPOTrainer(Trainer):
     r"""
     Initialize RecPOTrainer.
@@ -310,10 +310,10 @@ class RecDPOTrainer(Trainer):
         max_rejected_len = max([len(rejected_tokens[key]["input_ids"]) for key in rejected_tokens])
         longer_response_length = max(len(chosen_tokens["input_ids"]), max_rejected_len)
 
-        plength_list.append(len(prompt_tokens["input_ids"]))
-        alength_list.append(longer_response_length)
-        longest_length = len(prompt_tokens["input_ids"]) + longer_response_length
-        length_list.append(longest_length)
+        # plength_list.append(len(prompt_tokens["input_ids"]))
+        # alength_list.append(longer_response_length)
+        # longest_length = len(prompt_tokens["input_ids"]) + longer_response_length
+        # length_list.append(longest_length)
 
         # if combined sequence is too long, truncate the prompt
         if len(prompt_tokens["input_ids"]) + longer_response_length > self.max_length:

@@ -1,5 +1,5 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
@@ -11,17 +11,16 @@ from transformers import LlamaForCausalLM, LlamaTokenizer
 from accelerate import Accelerator
 import bitsandbytes as bnb
 
-from Prompt import Prompt
+from Prompt import Prompt, BeerPrompt
 import fire
-
 
 def train(
         # path
         output_dir: str = "output/",
         logging_dir: str = "log/",
         model_name: str = "meta-llama/Llama-3.2-1B",
-        prompt_path="./prompt/game_rating.txt",
-        train_dataset: str = "steam_10000",
+        prompt_path="./prompt/book.txt",
+        train_dataset: str = "amazon-books-wolow_10000",
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
         # wandb config
         wandb_project: str = "RecPO",
@@ -31,14 +30,14 @@ def train(
         batch_size: int = 4,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        cutoff_len: int = 512,
+        cutoff_len: int = 1024,
         eval_step=0.1,
         report_to: str = "none",
 
 ):
 
     def convert_dict_to_prompt(d: dict):
-        t = Prompt(prompt_path)
+        t = BeerPrompt(prompt_path) if train_dataset.startswith("beeradvocate") else Prompt(prompt_path)
         d["historyList"] = d["historyList"].split("::") if isinstance(d["historyList"], str) else d["historyList"]
         t.historyList = d["historyList"]
         t.historyRatingList = d["historyRatingList"]
@@ -49,6 +48,7 @@ def train(
     def process_data(data_point):
         t = convert_dict_to_prompt(data_point)
         prompt = str(t)
+        prompt = prompt.replace("\\n", "\n")
         target = data_point["trueSelection"]
         dic = {
             "prompt": prompt,
@@ -58,8 +58,8 @@ def train(
 
     ds_name, training_size = train_dataset.split('_')
     data_files = {
-        f"train": f"data/{ds_name}/{ds_name}-size10000-cans20-train.json",
-        "validation": f"data/{ds_name}/{ds_name}-cans20-val.json",
+        f"train": f"./data/{ds_name}/{ds_name}-size10000-cans20-train.json",
+        "validation": f"./data/{ds_name}/{ds_name}-cans20-val.json",
     }
     os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
@@ -135,7 +135,7 @@ def train(
         bf16=True,
         save_strategy="epoch",
         # save_steps=eval_step,
-        evaluation_strategy="steps",
+        evaluation_strategy="no",
         eval_steps=eval_step,
         logging_steps=1,
         output_dir=output_dir,

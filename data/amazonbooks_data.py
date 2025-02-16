@@ -155,7 +155,7 @@ class AmazonBookData_rating(data.Dataset):
     def check_files(self):
         self.item_id2name = self.get_book_id2name()
         if self.stage == 'train':
-            filename = "train_data_fseq.df"
+            filename = "Test_data_context.df"
         elif self.stage == 'val':
             filename = "Val_data.df"
         elif self.stage == 'test':

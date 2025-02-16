@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import json
 from datasets import load_dataset
@@ -12,11 +12,12 @@ from accelerate import Accelerator
 import fire
 
 
-def inference(dataset="amazon-books_10000",
+def inference(dataset="movielens_10000",
               model_name="meta-llama/Llama-3.1-8B",
-              prompt_path="./prompt/book_rating1.txt",
-              batch_size: int = 8,
-              resume_from_checkpoint: str = "/mnt/ssd3/zhongyu/RecPO/output/amazon-books/Base-8B-RecDPO-wSFT-ratio-ml2-gpu4/final_checkpoint/",
+              prompt_path="./prompt/movielens_rating1.txt",
+              batch_size: int = 10,
+              resume_from_checkpoint: str = "./output/movielens/Base-SFT-gpu8/final_checkpoint/",
+              # resume_from_checkpoint: str = "",
               save_output: bool = True,
               ):
 
@@ -57,7 +58,7 @@ def inference(dataset="amazon-books_10000",
     tokenizer.padding_side = "left"
 
     def convert_dict_to_prompt(d: dict):
-        t = Prompt(prompt_path)
+        t = BeerPrompt(prompt_path) if dataset.startswith("beeradvocate") else Prompt(prompt_path)
         d["historyList"] = d["historyList"].split("::") if isinstance(d["historyList"], str) else d["historyList"]
         t.historyList = d["historyList"]
         t.historyRatingList = d["historyRatingList"]
@@ -68,6 +69,7 @@ def inference(dataset="amazon-books_10000",
     def generate_and_tokenize_prompt(data_point):
         t = convert_dict_to_prompt(data_point)
         prompt = str(t)
+        prompt = prompt.replace("\\n", "\n")
         dic = data_point
         dic["prompt"] = prompt[:-1]
         # dic["prompt"] = prompt
@@ -91,8 +93,9 @@ def inference(dataset="amazon-books_10000",
             evaluate(model, tokenizer, test_data, batch_size=batch_size, save_output=save_output))
 
         # save_path = resume_from_checkpoint.split('final_checkpoint')[0]
-        with open(os.path.join(resume_from_checkpoint, "generation_output.json"), "w") as f:
-            json.dump(output_dict, f, indent=4)
+        if resume_from_checkpoint:
+            with open(os.path.join(resume_from_checkpoint, "generation_output_low.json"), "w") as f:
+                json.dump(output_dict, f, indent=4)
 
     else:
         accuracy, valid_ratio, correct_variance, valid_variance, all_variance = (

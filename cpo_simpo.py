@@ -14,7 +14,7 @@ import bitsandbytes as bnb
 from accelerate import Accelerator
 import fire
 
-from Prompt import Prompt
+from Prompt import Prompt, BeerPrompt
 
 def train(
         # train
@@ -22,7 +22,7 @@ def train(
         logging_dir="log/",
         model_name="meta-llama/Llama-3.2-1B-Instruct",
         prompt_path="./prompt/movie_rating2.txt",
-        train_dataset: str = "50000",
+        train_dataset: str = "steam_10000",
         resume_from_checkpoint: str = "output/SFT-gpu4/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
@@ -39,8 +39,8 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 384,
-        cutoff_len: int = 512,
+        prompt_cutoff_len: int = 24,
+        cutoff_len: int = 1024,
         eval_step=0.1,
 ):
 
@@ -71,6 +71,7 @@ def train(
             data_point["historyRatingList"] = examples["historyRatingList"][i]
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
+            prompt = prompt.replace("\\n", "\n")
             chosen = data_point["trueSelection"]
             negative_items = [item for item in data_point["itemList"] if item != data_point["trueSelection"]]
             sample_negs = random.sample(negative_items, neg_num)
@@ -148,7 +149,7 @@ def train(
         bf16=True,
         save_strategy="no",
         # save_steps=eval_step,
-        eval_strategy="steps",
+        eval_strategy="no",
         eval_steps=eval_step,
         logging_steps=1,
         output_dir=output_dir,

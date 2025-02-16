@@ -36,8 +36,8 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 384,
-        cutoff_len: int = 512,
+        prompt_cutoff_len: int = 924,
+        cutoff_len: int = 1024,
         eval_step=0.1,
         report_to: str = "none"
 ):
@@ -69,6 +69,7 @@ def train(
             data_point["historyRatingList"] = examples["historyRatingList"][i]
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
+            prompt = prompt.replace("\\n", "\n")
             chosen = data_point["trueSelection"]
             negative_items = [item for item in data_point["itemList"] if item != data_point["trueSelection"]]
             sample_negs = random.sample(negative_items, neg_num)

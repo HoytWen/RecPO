@@ -14,7 +14,7 @@ import bitsandbytes as bnb
 from accelerate import Accelerator
 import fire
 
-from Prompt import Prompt
+from Prompt import Prompt, BeerPrompt
 from trainer.rec_dpo_trainer import RecDPOTrainer
 from trainer.recpo_config import RecPOConfig
 
@@ -45,8 +45,8 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 412,
-        cutoff_len: int = 512,
+        prompt_cutoff_len: int = 924,
+        cutoff_len: int = 1024,
         eval_step=1,
         use_score: bool = True,
         ratio: bool = False,
@@ -61,7 +61,7 @@ def train(
     os.environ['WANDB_PROJECT'] = "-".join([wandb_project, ds_name])
 
     def convert_dict_to_prompt(d: dict):
-        t = Prompt(prompt_path)
+        t = BeerPrompt(prompt_path) if train_dataset.startswith("beeradvocate") else Prompt(prompt_path)
         d["historyList"] = d["historyList"].split("::") if isinstance(d["historyList"], str) else d["historyList"]
         t.historyList = d["historyList"]
         t.historyRatingList = d["historyRatingList"]
@@ -90,6 +90,7 @@ def train(
 
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
+            prompt = prompt.replace("\\n", "\n")
 
             chosen = data_point["trueSelection"]
             chosen_score = data_point["selectionScore"]
@@ -118,7 +119,6 @@ def train(
                     sample_neg_scores.append(data_point["itemScoreList"][negative_index])
             else:
                 sample_neg_scores = [0.] * neg_num
-
 
             dic["prompt"].append(prompt)
             dic["chosen"].append(chosen)
@@ -206,8 +206,8 @@ def train(
         truncation_mode="keep_end",
         save_strategy="epoch",
         # save_steps=eval_step,
-        eval_strategy="steps",
-        eval_steps=eval_step,
+        eval_strategy="no",
+        # eval_steps=eval_step,
         logging_steps=1,
         output_dir=output_dir,
         run_name=wandb_name,

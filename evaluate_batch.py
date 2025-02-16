@@ -50,20 +50,20 @@ def evaluate(
         return output
 
     targets = []
-    targets_score = []
     inputs = []
     cans = []
     history_rating_list = []
+    target_scores = []
     dic_lis = []
     for elm in val_data:
         prompt = elm["prompt"]
         target = elm["trueSelection"]
+        history_rating = [float(x.split('-')[-1]) for x in elm['historyRatingList']]
         target_score = elm["selectionScore"]
-        history_rating = [int(x) for x in elm['historyRatingList']]
         targets.append(target)
-        targets_score.append(target_score)
         inputs.append(prompt)
         cans.append(elm["itemList"])
+        target_scores.append(target_score)
         history_rating_list.append(history_rating)
 
     batch_num = (len(inputs) - 1) // batch_size + 1
@@ -78,12 +78,12 @@ def evaluate(
         batch_inputs = inputs[start:end]
         outputs = output_generate(batch_inputs)
         batch_targets = targets[start:end]
-        batch_targets_score = targets_score[start:end]
         batch_cans = cans[start:end]
+        batch_target_scores = target_scores[start:end]
         batch_history_rating = history_rating_list[start:end]
-        for input_text, output, target, target_score, candidates, history_rating in zip(batch_inputs, outputs,
-                                                                        batch_targets, batch_targets_score, batch_cans,
-                                                                        batch_history_rating):
+        for input_text, output, target, candidates, target_score, history_rating in zip(batch_inputs, outputs,
+                                                                                        batch_targets, batch_cans,
+                                                                                        batch_target_scores, batch_history_rating):
             # selection = output[len(input_text):]
             selection = output.split(" Answer:")[-1]
             num_cans = sum([1 for can in candidates if can in selection])
@@ -97,20 +97,26 @@ def evaluate(
             if num_cans == 1:
                 valid += 1
                 valid_flag = True
+
                 if target in selection:
                     score += 1
                     correct_var_list.append(np.var(history_rating))
                     correct_flag = True
                     print(f"Score increased to {score}")
+
+                # if num_high_rating == 1:
+                #     high_rating_ratio += 1
+                #     print(f"High rating ratio increased to {high_rating_ratio}")
+
                 valid_var_list.append(np.var(history_rating))
                 print(f"Valid ratio increased to {valid}")
-                # print("")
 
             all_var_list.append(np.var(history_rating))
             dic = {
                 "prompt": input_text,
                 "candidates": candidates,
                 "selection": selection,
+                "selectionScore": target_score,
                 "target": target,
                 "validFlag": valid_flag,
                 "correctFlag": correct_flag,
@@ -120,7 +126,7 @@ def evaluate(
 
 
     if save_output:
-        return (score / len(inputs), valid / len(inputs),
+        return (score / len(inputs),  valid / len(inputs),
                 np.mean(correct_var_list), np.mean(valid_var_list), np.mean(all_var_list), dic_lis)
     else:
         return (score / len(inputs), valid / len(inputs),

@@ -37,8 +37,8 @@ def train(
         gradient_accumulation_steps: int = 8,
         num_train_epochs: int = 5,
         learning_rate: float = 1e-5,
-        prompt_cutoff_len: int = 384,
-        cutoff_len: int = 512,
+        prompt_cutoff_len: int = 924,
+        cutoff_len: int = 1024,
         eval_step=0.1,
 ):
     ds_name, training_size = train_dataset.split('_')
@@ -72,6 +72,7 @@ def train(
 
             t = convert_dict_to_prompt(data_point)
             prompt = str(t)
+            prompt = prompt.replace("\\n", "\n")
 
             chosen = data_point["trueSelection"]
 
@@ -156,8 +157,8 @@ def train(
         bf16=True,
         save_strategy="no",
         # save_steps=eval_step,
-        eval_strategy="steps",
-        eval_steps=eval_step,
+        eval_strategy="no",
+        # eval_steps=eval_step,
         logging_steps=1,
         output_dir=output_dir,
         report_to=report_to,
