@@ -1,5 +1,4 @@
 import os
-# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
 import torch
@@ -7,7 +6,7 @@ from typing import Any, Dict, Literal, Optional
 
 from transformers import AutoTokenizer, TrainingArguments, AutoModelForCausalLM, BitsAndBytesConfig
 from datasets import load_dataset
-from trl import CPOTrainer, CPOConfig
+from trl import CPOTrainer, CPOConfig, PPOTrainer, RewardTrainer
 from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model, PeftModel, PeftConfig
 
 import bitsandbytes as bnb

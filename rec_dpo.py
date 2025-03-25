@@ -1,6 +1,4 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
 import torch

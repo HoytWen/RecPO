@@ -1,5 +1,4 @@
 import os
-# os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 from typing import Literal
 

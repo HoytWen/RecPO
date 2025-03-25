@@ -1,6 +1,4 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "6"
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
 from datasets import load_dataset
