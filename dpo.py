@@ -1,4 +1,5 @@
 import os
+os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 from typing import Literal
 
@@ -19,10 +20,10 @@ def train(
         # train
         output_dir="output/",
         logging_dir="log/",
-        model_name="meta-llama/Llama-3.2-1B-Instruct",
-        prompt_path="./prompt/movie_rating.txt",
-        train_dataset: str = "50000",
-        resume_from_checkpoint: str = "output/SFT-gpu4/",  # either training checkpoint or final adapter
+        model_name="Qwen/Qwen2.5-7B",
+        prompt_path="./prompt/book_rating.txt",
+        train_dataset: str = "amazon-books_10000",
+        resume_from_checkpoint: str = "output/amazon-books/Base-qwen-7B-SFT-gpu8/final_checkpoint/",  # either training checkpoint or final adapter
         # wandb config
         wandb_project: str = "RecPo",
         wandb_name: str = "DPO",  # the name of the wandb run

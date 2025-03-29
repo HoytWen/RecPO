@@ -1,4 +1,6 @@
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
 from datasets import load_dataset
@@ -89,10 +91,7 @@ def train(
     base_model.config.use_cache = False
     base_model = prepare_model_for_kbit_training(base_model)
 
-    if 'Llama-3' in model_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-    else:
-        tokenizer = LlamaTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"  # Fix weird overflow issue with fp16 training

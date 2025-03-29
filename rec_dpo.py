@@ -1,4 +1,5 @@
 import os
+os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import random
 
 import torch
@@ -23,10 +24,10 @@ def train(
         # train
         output_dir="output/",
         logging_dir="log/",
-        model_name="meta-llama/Llama-3.2-1B",
-        prompt_path="./prompt/game_rating.txt",
-        train_dataset: str = "steam_10000",
-        resume_from_checkpoint: str = "output/amazon-books/Base-1B-SFT-gpu4/final_checkpoint/",  # either training checkpoint or final adapter
+        model_name="Qwen/Qwen2.5-7B",
+        prompt_path="./prompt/book_rating.txt",
+        train_dataset: str = "beeradvocate_10000",
+        resume_from_checkpoint: str = "output/amazon-books/Base-qwen-7B-SFT-gpu8/final_checkpoint/",  # either training checkpoint or final adapter
         # wandb config
         report_to: str = "none",
         wandb_project: str = "RecPO",
@@ -34,20 +35,20 @@ def train(
         # training hyperparameters.
         beta: float = 1.,
         simpo_gamma: float = 0.,
-        margin_lambda: float = 1,
+        margin_lambda: float = 2,
         sft_weight: float = 0.,
         loss_type: Literal["sigmoid", "hinge", "simpo", "ipo", "cpo"] = "sigmoid",
         ln: bool = False,
         neg_num: int = 3,
-        batch_size: int = 4,
+        batch_size: int = 1,
         gradient_accumulation_steps: int = 8,
-        num_train_epochs: int = 5,
+        num_train_epochs: int = 3,
         learning_rate: float = 1e-5,
         prompt_cutoff_len: int = 924,
         cutoff_len: int = 1024,
         eval_step=1,
         use_score: bool = True,
-        ratio: bool = False,
+        ratio: bool = True,
         negative_selection: str = "both",
 ):
 
