@@ -315,8 +315,8 @@
         --report_to none \
         --wandb_project RecPO \
         --wandb_name Base-qwen-7B-SFT-gpu8 > log/base-sft
-#
-#
+
+
  CUDA_VISIBLE_DEVICES=2,3,4,5,6,7,0,1 torchrun --nproc_per_node 8 --master_port=25641 sft.py \
         --model_name Qwen/Qwen2.5-7B \
         --train_dataset beeradvocate_10000 \

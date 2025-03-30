@@ -1,6 +1,5 @@
 import os
 # os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
-os.environ["HF_HOME"] = "/data/02/chunhui/cached"
 import random
 from typing import Literal
 

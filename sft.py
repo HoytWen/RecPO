@@ -1,5 +1,4 @@
 import os
-os.environ["HF_HOME"] = "/data/02/chunhui/cached"
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
