@@ -229,13 +229,16 @@ class SDPOTrainer(Trainer):
             all([self.tokenizer.eos_token_id not in rejected_tokens[key]["input_ids"] for key in rejected_tokens])
         ), f"Rejected response contains EOS token: {rejected}"
 
-        prompt_tokens["input_ids"] = [self.tokenizer.bos_token_id] + prompt_tokens["input_ids"]
-        prompt_tokens["attention_mask"] = [1] + prompt_tokens["attention_mask"]
-        chosen_tokens["input_ids"].append(self.tokenizer.eos_token_id)
-        chosen_tokens["attention_mask"].append(1)
-        for key in rejected_tokens:
-            rejected_tokens[key]["input_ids"].append(self.tokenizer.eos_token_id)
-            rejected_tokens[key]["attention_mask"].append(1)
+        if self.tokenizer.bos_token_id is not None:
+            prompt_tokens["input_ids"] = [self.tokenizer.bos_token_id] + prompt_tokens["input_ids"]
+            prompt_tokens["attention_mask"] = [1] + prompt_tokens["attention_mask"]
+
+        if self.tokenizer.eos_token_id is not None:
+            chosen_tokens["input_ids"].append(self.tokenizer.eos_token_id)
+            chosen_tokens["attention_mask"].append(1)
+            for key in rejected_tokens:
+                rejected_tokens[key]["input_ids"].append(self.tokenizer.eos_token_id)
+                rejected_tokens[key]["attention_mask"].append(1)
 
         max_rejected_len = max([len(rejected_tokens[key]["input_ids"]) for key in rejected_tokens])
         longer_response_length = max(len(chosen_tokens["input_ids"]), max_rejected_len)
