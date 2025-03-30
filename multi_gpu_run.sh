@@ -636,27 +636,27 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node 8 --master_port=2
 #         --report_to wandb \
 #         --wandb_project RecPO \
 #         --wandb_name Base-qwen-7B-SimPO-gpu8 > log/simpo.log
-#
-#
-#  CUDA_VISIBLE_DEVICES=2,3,4,5,6,7,0,1 torchrun --nproc_per_node 8 --master_port=25642 cpo_simpo.py \
-#         --model_name Qwen/Qwen2.5-7B \
-#         --resume_from_checkpoint output/steam/Base-qwen-7B-SFT-gpu8/final_checkpoint/ \
-#         --train_dataset steam_10000 \
-#         --batch_size 2 \
-#         --gradient_accumulation_steps 8 \
-#         --prompt_path ./prompt/game_rating.txt \
-#         --logging_dir log/ \
-#         --output_dir output/ \
-#         --learning_rate 1e-5 \
-#         --beta 1 \
-#         --loss_type simpo \
-#         --simpo_gamma 2 \
-#         --cpo_alpha 0 \
-#         --neg_num 1 \
-#         --num_train_epochs 3 \
-#         --eval_step 0.2 \
-#         --prompt_cutoff_len 704 \
-#         --cutoff_len 768 \
-#         --report_to wandb \
-#         --wandb_project RecPO \
-#         --wandb_name Base-qwen-7B-SimPO-gpu8 > log/simpo.log
+
+
+#CUDA_VISIBLE_DEVICES=2,3,4,5,6,7,0,1 torchrun --nproc_per_node 8 --master_port=25642 cpo_simpo.py \
+#       --model_name Qwen/Qwen2.5-7B \
+#       --resume_from_checkpoint output/steam/Base-qwen-7B-SFT-gpu8/final_checkpoint/ \
+#       --train_dataset steam_10000 \
+#       --batch_size 2 \
+#       --gradient_accumulation_steps 8 \
+#       --prompt_path ./prompt/game_rating.txt \
+#       --logging_dir log/ \
+#       --output_dir output/ \
+#       --learning_rate 1e-5 \
+#       --beta 1 \
+#       --loss_type simpo \
+#       --simpo_gamma 2 \
+#       --cpo_alpha 0 \
+#       --neg_num 1 \
+#       --num_train_epochs 3 \
+#       --eval_step 0.2 \
+#       --prompt_cutoff_len 704 \
+#       --cutoff_len 768 \
+#       --report_to wandb \
+#       --wandb_project RecPO \
+#       --wandb_name Base-qwen-7B-SimPO-gpu8 > log/simpo.log

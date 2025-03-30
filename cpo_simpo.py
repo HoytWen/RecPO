@@ -174,9 +174,9 @@ def train(
     )
     cpo_simpo_trainer.train()
 
-    output_dir = os.path.join(output_dir, wandb_name)
-    cpo_simpo_trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    final_checkpoint_dir = os.path.join(output_dir, "final_checkpoint")
+    cpo_simpo_trainer.save_model(final_checkpoint_dir)
+    tokenizer.save_pretrained(final_checkpoint_dir)
 
 
 if __name__ == "__main__":
