@@ -536,8 +536,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node 8 --master_port=2
         --beta 1 \
         --neg_num 3 \
         --num_train_epochs 3 \
-        --prompt_cutoff_len 924 \
-        --cutoff_len 1024 \
+        --prompt_cutoff_len 704 \
+        --cutoff_len 768 \
         --eval_step 0.2 \
         --report_to none \
         --wandb_project RecPO \
