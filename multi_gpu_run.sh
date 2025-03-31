@@ -569,7 +569,7 @@
  CUDA_VISIBLE_DEVICES=2,3,4,5,6,7,0,1 torchrun --nproc_per_node 8 --master_port=25642 cpo_simpo.py \
          --model_name Qwen/Qwen2.5-7B \
          --resume_from_checkpoint output/amazon-books/Base-qwen-7B-SFT-gpu8/final_checkpoint/ \
-         --train_dataset amaon-books_10000 \
+         --train_dataset amazon-books_10000 \
          --batch_size 2 \
          --gradient_accumulation_steps 8 \
          --prompt_path ./prompt/book_rating.txt \
