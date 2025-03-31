@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["HF_HOME"] = "/mnt/ssd3/chunhui/research"
 import json
 from datasets import load_dataset
@@ -12,11 +12,11 @@ from accelerate import Accelerator
 import fire
 
 
-def inference(dataset="movielens_10000",
-              model_name="meta-llama/Llama-3.1-8B",
-              prompt_path="./prompt/movielens_rating1.txt",
+def inference(dataset="amazon-books_10000",
+              model_name="Qwen/Qwen2.5-7B",
+              prompt_path="./prompt/book_rating.txt",
               batch_size: int = 10,
-              resume_from_checkpoint: str = "./output/movielens/Base-SFT-gpu8/final_checkpoint/",
+              resume_from_checkpoint: str = "./output/amazon-books/Base-qwen-7B-SFT-gpu8/final_checkpoint/",
               # resume_from_checkpoint: str = "",
               save_output: bool = True,
               ):
@@ -49,11 +49,7 @@ def inference(dataset="movielens_10000",
         print(f"Use base model {model_name} for evaluation!")
     model.eval()
 
-    if "Llama-3" in model_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-    else:
-        tokenizer = LlamaTokenizer.from_pretrained(model_name)
-
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"
 
